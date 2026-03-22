@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ПИНОК</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --bg:#0a0a0a;
+      --card:#161616;
+      --card2:#1e1e1e;
+      --green:#39ff14;
+      --green-dark:#0a2200;
+      --green-mid:rgba(57,255,20,0.18);
+      --text:#e8e8e8;
+      --dim:#555;
+      --font:'Press Start 2P',monospace;
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+    #app{display:flex;flex-direction:column;height:100vh;max-width:430px;margin:0 auto;position:relative}
+
+    /* ─── PAGES ─── */
+    .page{flex:1;overflow-y:auto;padding:16px 14px 80px;display:none}
+    .page.active{display:block}
+    .page::-webkit-scrollbar{width:3px}
+    .page::-webkit-scrollbar-thumb{background:var(--green-dark)}
+
+    /* ─── HEADER ─── */
+    .page-title{text-align:center;font-size:20px;letter-spacing:3px;color:#fff;
+      text-shadow:0 0 24px var(--green),0 0 8px var(--green);margin-bottom:22px;padding-top:6px}
+
+    /* ─── XP BAR ─── */
+    .xp-label{font-size:6px;letter-spacing:3px;color:var(--dim);text-align:center;margin-bottom:8px}
+    .xp-outer{
+      border:2px solid var(--green);background:var(--green-dark);height:30px;padding:3px;
+      image-rendering:pixelated;margin-bottom:6px;position:relative
+    }
+    .xp-inner{
+      height:100%;background:var(--green);
+      background-image:repeating-linear-gradient(90deg,transparent,transparent 10px,rgba(0,0,0,0.12) 10px,rgba(0,0,0,0.12) 11px);
+      transition:width .6s ease;min-width:4px;position:relative
+    }
+    .xp-pct{
+      position:absolute;right:10px;top:50%;transform:translateY(-50%);
+      font-size:7px;color:#fff;text-shadow:1px 1px 0 #000;pointer-events:none
+    }
+    .streak{display:flex;align-items:center;justify-content:center;gap:8px;font-size:7px;color:var(--dim);margin-bottom:20px}
+    .streak span{font-size:16px}
+
+    /* ─── SECTION TITLE ─── */
+    .stitle{font-size:6px;letter-spacing:2px;color:var(--dim);margin-bottom:10px}
+
+    /* ─── TASK CARDS ─── */
+    .task-card{
+      background:var(--card);border:1px solid #222;border-left:3px solid var(--green);
+      padding:11px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;
+      cursor:pointer;transition:background .15s,border-left-color .15s
+    }
+    .task-card:active{background:var(--green-mid)}
+    .task-card.done{border-left-color:#333;opacity:.45}
+    .task-card.done .task-title{text-decoration:line-through;color:var(--dim)}
+    .task-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0}
+    .task-body{flex:1;min-width:0}
+    .task-title{font-size:7.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
+    .task-meta{font-size:5.5px;color:var(--dim);margin-top:3px}
+    .task-check{
+      background:none;border:1px solid var(--dim);width:20px;height:20px;
+      cursor:pointer;color:var(--dim);font-family:var(--font);font-size:9px;
+      display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s
+    }
+    .task-check:hover,.task-card.done .task-check{border-color:var(--green);color:var(--green)}
+    .empty{text-align:center;padding:28px 0;color:var(--dim)}
+    .empty .ei{font-size:40px;display:block;margin-bottom:12px}
+    .empty .et{font-size:7px;line-height:2.2}
+
+    /* ─── VOICE AREA ─── */
+    .voice-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;padding:8px 0 0;position:relative}
+    .voice-hint{font-size:6.5px;letter-spacing:2px;color:var(--dim)}
+    .mic-btn{
+      width:82px;height:82px;border-radius:50%;background:var(--green);border:none;cursor:pointer;
+      font-size:34px;display:flex;align-items:center;justify-content:center;
+      box-shadow:0 0 0 5px var(--green-dark),0 0 30px rgba(57,255,20,.35);
+      transition:transform .1s,box-shadow .1s;position:relative
+    }
+    .mic-btn:active{transform:scale(.94);box-shadow:0 0 0 5px var(--green-dark),0 0 55px rgba(57,255,20,.7)}
+    .mic-btn.pulse{animation:mpulse 1s infinite}
+    @keyframes mpulse{
+      0%,100%{box-shadow:0 0 0 5px var(--green-dark),0 0 30px rgba(57,255,20,.35)}
+      50%{box-shadow:0 0 0 10px var(--green-dark),0 0 65px rgba(57,255,20,.8)}
+    }
+    /* red dots like in mockup */
+    .mic-btn::before,.mic-btn::after{
+      content:'';position:absolute;width:7px;height:7px;border-radius:50%;background:#e00;
+    }
+    .mic-btn::before{top:10px;left:2px}
+    .mic-btn::after{top:10px;right:2px}
+
+    /* ─── MASCOT ─── */
+    .mascot{position:fixed;right:16px;bottom:78px;font-size:38px;pointer-events:none;
+      filter:drop-shadow(0 0 8px rgba(57,255,20,.45))}
+
+    /* ─── BOTTOM NAV ─── */
+    .bnav{
+      position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+      width:100%;max-width:430px;background:#0f0f0f;border-top:1px solid #1e1e1e;
+      display:flex;height:62px;z-index:50
+    }
+    .nb{
+      flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:4px;color:var(--dim);
+      font-family:var(--font);transition:color .15s
+    }
+    .nb .ni{font-size:20px}
+    .nb .nl{font-size:5px;letter-spacing:1px}
+    .nb.active{color:var(--green)}
+
+    /* ─── STATS ─── */
+    .bar-chart{display:flex;align-items:flex-end;gap:6px;height:90px;padding:0 4px;margin-bottom:28px}
+    .bc{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end}
+    .bf{width:100%;background:var(--green-dark);border:1px solid var(--green);min-height:3px;transition:height .4s ease}
+    .bf.today{background:var(--green)}
+    .bn{font-size:5.5px;color:var(--dim)}
+    .bd{font-size:5.5px;color:var(--dim)}
+    .ach-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:24px}
+    .ach{
+      background:var(--card);border:1px solid #2a2a2a;padding:12px 6px;
+      text-align:center;display:flex;flex-direction:column;align-items:center;gap:7px
+    }
+    .ach.locked{opacity:.3;filter:grayscale(1)}
+    .ach .ai{font-size:22px}
+    .ach .an{font-size:5px;color:var(--dim);line-height:1.8}
+    .stats-nums{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px}
+    .stat-box{background:var(--card);border:1px solid #222;padding:14px 12px;text-align:center}
+    .stat-val{font-size:18px;color:var(--green);margin-bottom:6px}
+    .stat-lbl{font-size:5px;color:var(--dim);letter-spacing:1px}
+
+    /* ─── SETTINGS ─── */
+    .srow{
+      background:var(--card);border:1px solid #222;padding:13px 14px;margin-bottom:8px;
+      display:flex;align-items:center;justify-content:space-between;cursor:pointer
+    }
+    .slabel{font-size:7px;color:var(--text);line-height:1.5}
+    .sval{font-size:7px;color:var(--green);text-align:right}
+    .ptoggle{display:flex;border:1px solid var(--dim);overflow:hidden}
+    .topt{
+      padding:7px 10px;font-size:6px;cursor:pointer;color:var(--dim);
+      background:none;border:none;font-family:var(--font);transition:all .15s
+    }
+    .topt.active{background:var(--green);color:#000}
+    .invite-box{background:var(--card);border:2px solid var(--green);padding:20px;text-align:center;margin-bottom:8px}
+    .icode{font-size:16px;color:var(--green);letter-spacing:5px;margin:14px 0;word-break:break-all}
+    .ihint{font-size:5.5px;color:var(--dim);line-height:2.2}
+    .member-row{background:var(--card);border:1px solid #222;padding:10px 14px;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+    .member-avatar{font-size:18px}
+    .member-name{font-size:7px;color:var(--text)}
+    .member-role{font-size:5.5px;color:var(--dim);margin-top:3px}
+
+    /* ─── BUTTONS ─── */
+    .btn{
+      background:var(--green);color:#000;border:none;padding:12px 18px;
+      font-family:var(--font);font-size:7.5px;cursor:pointer;width:100%;margin-top:10px;transition:opacity .15s
+    }
+    .btn:active{opacity:.8}
+    .btn-ghost{background:transparent;color:var(--dim);border:1px solid var(--dim);margin-top:8px}
+    .btn-ghost:active{opacity:.7}
+
+    /* ─── MODAL ─── */
+    .overlay{
+      position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;
+      display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .2s
+    }
+    .overlay.open{opacity:1;pointer-events:all}
+    .modal{
+      width:100%;max-width:430px;margin:0 auto;background:#111;
+      border-top:2px solid var(--green);padding:20px 16px 32px;
+      transform:translateY(18px);transition:transform .2s
+    }
+    .overlay.open .modal{transform:translateY(0)}
+    .modal-title{font-size:10px;color:var(--green);text-align:center;margin-bottom:18px}
+    .mtextarea{
+      width:100%;background:var(--card);border:1px solid var(--dim);border-bottom:2px solid var(--green);
+      color:var(--text);font-family:var(--font);font-size:8.5px;padding:13px 11px;
+      outline:none;resize:none;line-height:1.9
+    }
+    .mtextarea:focus{border-color:var(--green)}
+    .mhint{font-size:5.5px;color:var(--dim);margin-top:7px;line-height:1.9}
+    .loading-box{display:none;text-align:center;padding:18px}
+    .loading-box.show{display:block}
+    .ldots{font-size:7.5px;color:var(--green);animation:blink 1.2s infinite}
+    .llines{font-size:6.5px;color:var(--dim);margin-top:10px;line-height:2.8;max-height:100px;overflow:hidden}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+    .preview{display:none;background:var(--green-mid);border:1px solid var(--green);padding:13px;margin-top:10px}
+    .preview.show{display:block}
+    .prow{display:flex;gap:8px;margin-bottom:7px;font-size:6.5px}
+    .pk{color:var(--dim);min-width:64px}
+    .pv{color:var(--text)}
+
+    /* ─── TOAST ─── */
+    .toast{
+      position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-60px);
+      background:var(--green);color:#000;padding:9px 16px;font-family:var(--font);
+      font-size:7px;z-index:300;transition:transform .25s;white-space:nowrap;
+      box-shadow:0 0 20px rgba(57,255,20,.5)
+    }
+    .toast.show{transform:translateX(-50%) translateY(0)}
+
+    /* ─── SCANLINES ─── */
+    #app::after{
+      content:'';position:fixed;inset:0;pointer-events:none;z-index:999;
+      background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.04) 3px,rgba(0,0,0,0.04) 4px)
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════ HOME ══════════ -->
+  <div class="page active" id="page-home">
+
+    <div class="page-title">ПИНОК 🥊</div>
+
+    <div class="xp-label">УРОВЕНЬ ПИНКОВ</div>
+    <div class="xp-outer">
+      <div class="xp-inner" id="xp-fill" style="width:0%"></div>
+      <div class="xp-pct" id="xp-pct">0%</div>
+    </div>
+    <div class="streak"><span>🔥</span><span id="streak-val">0 ДНЕЙ ПОДРЯД</span></div>
+
+    <div class="stitle">ЗАДАЧИ НА СЕГОДНЯ</div>
+    <div id="tasks-wrap">
+      <div class="empty" id="tasks-loader"><span class="ei">⏳</span><div class="et">ЗАГРУЗКА...</div></div>
+    </div>
+
+    <div class="voice-wrap">
+      <div class="voice-hint">СКАЖИ: ДАЙ ПИНОК</div>
+      <button class="mic-btn" id="mic-btn" onclick="openModal()">🎤</button>
+    </div>
+
+  </div>
+
+  <!-- ══════════ STATS ══════════ -->
+  <div class="page" id="page-stats">
+
+    <div class="page-title">📊 СТАТЫ</div>
+
+    <div class="stats-nums" id="stats-nums">
+      <div class="stat-box"><div class="stat-val" id="stat-done">—</div><div class="stat-lbl">ВЫПОЛНЕНО</div></div>
+      <div class="stat-box"><div class="stat-val" id="stat-streak">—</div><div class="stat-lbl">СТРИК ДНЕЙ</div></div>
+    </div>
+
+    <div class="stitle">ЗАДАЧИ ЗА НЕДЕЛЮ</div>
+    <div class="bar-chart" id="week-chart"></div>
+
+    <div class="stitle">АЧИВКИ</div>
+    <div class="ach-grid" id="ach-grid"></div>
+
+  </div>
+
+  <!-- ══════════ SETTINGS ══════════ -->
+  <div class="page" id="page-settings">
+
+    <div class="page-title">⚙️ НАСТРОЙКИ</div>
+
+    <div class="stitle">УВЕДОМЛЕНИЯ</div>
+    <div class="srow" onclick="editTime('morning')">
+      <div class="slabel">УТРЕННИЙ ПИНОК</div>
+      <div class="sval" id="st-morning">09:00</div>
+    </div>
+    <div class="srow" onclick="editTime('evening')">
+      <div class="slabel">ВЕЧЕРНИЙ ЧЕКИН</div>
+      <div class="sval" id="st-evening">21:00</div>
+    </div>
+
+    <div class="stitle" style="margin-top:20px">СТИЛЬ ПИНКА</div>
+    <div class="srow" style="flex-direction:column;align-items:flex-start;gap:12px">
+      <div class="slabel">КАК БОТ ОБЩАЕТСЯ?</div>
+      <div class="ptoggle">
+        <button class="topt active" id="tone-soft" onclick="setTone('soft')">🤗 МЯГКИЙ</button>
+        <button class="topt" id="tone-hard" onclick="setTone('hard')">💀 ХАРДКОР</button>
+      </div>
+    </div>
+
+    <div class="stitle" style="margin-top:20px">СКВАД</div>
+    <div class="invite-box">
+      <div class="slabel">КОД ПРИЗЫВА</div>
+      <div class="icode" id="invite-code">——————</div>
+      <div class="ihint">ОТПРАВЬ КОД ДРУГУ<br>ЧТОБЫ ПИНАТЬ ВМЕСТЕ</div>
+      <button class="btn" onclick="copyInvite()">СКОПИРОВАТЬ ССЫЛКУ</button>
+    </div>
+
+    <div class="stitle">УЧАСТНИКИ</div>
+    <div id="members-list"><div style="font-size:6.5px;color:var(--dim);padding:10px 0">ТОЛЬКО ВЫ ПОКА В СКВАДЕ</div></div>
+
+  </div>
+
+  <!-- ══════════ NAV ══════════ -->
+  <nav class="bnav">
+    <button class="nb active" data-tab="home" onclick="goTab('home')">
+      <span class="ni">🏠</span><span class="nl">ЗАДАЧИ</span>
+    </button>
+    <button class="nb" data-tab="stats" onclick="goTab('stats')">
+      <span class="ni">📊</span><span class="nl">СТАТЫ</span>
+    </button>
+    <button class="nb" data-tab="settings" onclick="goTab('settings')">
+      <span class="ni">⚙️</span><span class="nl">НАСТРОЙКИ</span>
+    </button>
+  </nav>
+
+  <div class="mascot">🥷</div>
+</div>
+
+<!-- ══════════ ADD TASK MODAL ══════════ -->
+<div class="overlay" id="overlay" onclick="closeBg(event)">
+  <div class="modal">
+    <div class="modal-title">➕ НОВЫЙ ПИНОК</div>
+
+    <div id="m-input">
+      <textarea class="mtextarea" id="task-txt" rows="3"
+        placeholder="Что нужно сделать?&#10;Например: купить хлеб завтра&#10;Саше помыть посуду в 19:00"></textarea>
+      <div class="mhint">ИИ РАЗБЕРЁТ КТО / ЧТО / КОГДА</div>
+      <button class="btn" onclick="doParseTask()">ДАЙ ПИНОК ➜</button>
+      <button class="btn btn-ghost" onclick="closeModal()">ОТМЕНА</button>
+    </div>
+
+    <div class="loading-box" id="m-loading">
+      <div class="ldots">▓▓▒▒░░ АНАЛИЗИРУЮ...</div>
+      <div class="llines" id="m-lines"></div>
+    </div>
+
+    <div class="preview" id="m-preview">
+      <div class="prow"><span class="pk">ЗАДАЧА:</span><span class="pv" id="p-title">—</span></div>
+      <div class="prow"><span class="pk">КОМУ:</span><span class="pv" id="p-who">—</span></div>
+      <div class="prow"><span class="pk">КОГДА:</span><span class="pv" id="p-when">—</span></div>
+      <div class="prow"><span class="pk">ЧАСТОТА:</span><span class="pv" id="p-freq">—</span></div>
+      <button class="btn" onclick="confirmTask()">✓ ПОДТВЕРДИТЬ</button>
+      <button class="btn btn-ghost" onclick="backToInput()">← ПРАВКА</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════ INIT ═══════
+const tg = window.Telegram?.WebApp
+if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor?.('#0a0a0a'); tg.setBackgroundColor?.('#0a0a0a') }
+
+const BASE = window.location.origin
+let userData = null, tasks = [], parsedTask = null
+
+async function api(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Init-Data': tg?.initData || '' }
+  }
+  if (body) opts.body = JSON.stringify(body)
+  const r = await fetch(BASE + path, opts)
+  return r.json()
+}
+
+async function init() {
+  try {
+    const d = await api('POST', '/api/auth', { initData: tg?.initData || '' })
+    if (d.ok) { userData = d.user; await loadTasks(); await loadStats(); loadSettings() }
+    else showDemo()
+  } catch { showDemo() }
+}
+
+// ═══════ TASKS ═══════
+async function loadTasks() {
+  try {
+    const d = await api('GET', '/api/tasks/today')
+    if (d.ok) { tasks = d.tasks; renderTasks(); renderXP() }
+  } catch { renderTasks() }
+}
+
+function renderTasks() {
+  const w = document.getElementById('tasks-wrap')
+  if (!tasks.length) {
+    w.innerHTML = '<div class="empty"><span class="ei">✅</span><div class="et">ВСЁ СДЕЛАНО!<br>МОЖНО ОТДЫХАТЬ</div></div>'
+    return
+  }
+  w.innerHTML = tasks.map(t => `
+    <div class="task-card ${t.status==='done'?'done':''}" id="tc-${t.id}">
+      <div class="task-icon">${taskIcon(t)}</div>
+      <div class="task-body">
+        <div class="task-title">${esc(t.title)}</div>
+        <div class="task-meta">${taskMeta(t)}</div>
+      </div>
+      ${t.status!=='done'
+        ? `<button class="task-check" onclick="doneTask('${t.id}')">✓</button>`
+        : `<span style="font-size:15px">✅</span>`}
+    </div>`).join('')
+}
+
+function taskIcon(t) {
+  if (t.status==='done') return '✅'
+  if (t.frequency==='daily') return '🔄'
+  if (t.due_date) return '⏰'
+  return '📌'
+}
+function taskMeta(t) {
+  const p = []
+  if (t.frequency==='daily') p.push('ежедневно')
+  else if (t.frequency==='weekly') p.push('еженедельно')
+  if (t.due_date) { const d=new Date(t.due_date); p.push('до '+d.toLocaleDateString('ru',{day:'numeric',month:'short'})) }
+  return p.join(' · ') || 'сегодня'
+}
+
+function renderXP() {
+  const total = tasks.length, done = tasks.filter(t=>t.status==='done').length
+  const pct = total ? Math.round(done/total*100) : 0
+  document.getElementById('xp-fill').style.width = pct+'%'
+  document.getElementById('xp-pct').textContent = pct+'%'
+}
+
+async function doneTask(id) {
+  const card = document.getElementById('tc-'+id)
+  if (!card || card.classList.contains('done')) return
+  card.classList.add('done')
+  card.querySelector('.task-check')?.replaceWith(Object.assign(document.createElement('span'), {style:'font-size:15px', textContent:'✅'}))
+  const t = tasks.find(x=>x.id===id); if(t) t.status='done'
+  renderXP()
+  try { await api('POST', `/api/tasks/${id}/complete`) } catch {}
+  toast('ВЫПОЛНЕНО! +10 XP 🥊')
+}
+
+// ═══════ STATS ═══════
+async function loadStats() {
+  try {
+    const d = await api('GET', '/api/stats')
+    if (d.ok) { renderChart(d.weekData); renderAch(d.streak); renderStatNums(d) }
+  } catch { renderChart([]); renderAch(0) }
+}
+
+function renderStatNums(d) {
+  document.getElementById('stat-done').textContent = d.totalDone ?? '—'
+  document.getElementById('stat-streak').textContent = d.streak ?? 0
+  document.getElementById('streak-val').textContent = (d.streak||0)+' ДНЕЙ ПОДРЯД'
+}
+
+function renderChart(data) {
+  const days = ['ПН','ВТ','СР','ЧТ','ПТ','СБ','ВС']
+  const todayIdx = (new Date().getDay()+6)%7
+  const vals = days.map((_,i) => data[i] ?? 0)
+  const max = Math.max(...vals, 1)
+  document.getElementById('week-chart').innerHTML = days.map((d,i) => `
+    <div class="bc">
+      <div class="bn">${vals[i]||''}</div>
+      <div class="bf ${i===todayIdx?'today':''}" style="height:${Math.round(vals[i]/max*75)}px"></div>
+      <div class="bd">${d}</div>
+    </div>`).join('')
+}
+
+const ACHS = [
+  {icon:'🌅',name:'РАННЯЯ\nПТАШКА'},{icon:'💥',name:'МАСТЕР\nПИНКОВ'},
+  {icon:'🔥',name:'7 ДНЕЙ\nПОДРЯД'},{icon:'⚡',name:'МОЛНИЯ'},
+  {icon:'👑',name:'КОРОЛЬ\nПИНКОВ'},{icon:'🤝',name:'КОМАНДНЫЙ\nИГРОК'}
+]
+function renderAch(streak) {
+  const ul = new Set()
+  if (streak>=7) ul.add(2); if (streak>=30) ul.add(4)
+  document.getElementById('ach-grid').innerHTML = ACHS.map((a,i)=>`
+    <div class="ach ${ul.has(i)?'':'locked'}">
+      <div class="ai">${a.icon}</div>
+      <div class="an">${a.name}</div>
+    </div>`).join('')
+}
+
+// ═══════ SETTINGS ═══════
+function loadSettings() {
+  if (userData?.family?.invite_code) document.getElementById('invite-code').textContent = userData.family.invite_code
+  if (userData?.family?.digest_hour != null) document.getElementById('st-evening').textContent = String(userData.family.digest_hour).padStart(2,'0')+':00'
+  renderMembers()
+}
+function renderMembers() {
+  const ms = userData?.members || []
+  const el = document.getElementById('members-list')
+  if (!ms.length) { el.innerHTML='<div style="font-size:6.5px;color:var(--dim);padding:10px 0">ТОЛЬКО ВЫ ПОКА В СКВАДЕ</div>'; return }
+  el.innerHTML = ms.map(m=>`
+    <div class="member-row">
+      <div class="member-avatar">👤</div>
+      <div><div class="member-name">${esc(m.name)}</div><div class="member-role">${m.role==='manager'?'ADMIN':'УЧАСТНИК'}</div></div>
+    </div>`).join('')
+}
+function setTone(t) {
+  document.getElementById('tone-soft').classList.toggle('active', t==='soft')
+  document.getElementById('tone-hard').classList.toggle('active', t==='hard')
+}
+function editTime(which) {
+  const cur = which==='morning' ? document.getElementById('st-morning').textContent : document.getElementById('st-evening').textContent
+  const v = prompt('Новое время (ЧЧ:ММ):', cur)
+  if (v && /^\d{1,2}:\d{2}$/.test(v)) {
+    document.getElementById(which==='morning'?'st-morning':'st-evening').textContent = v
+    toast('СОХРАНЕНО')
+  }
+}
+function copyInvite() {
+  const code = document.getElementById('invite-code').textContent
+  if (code.includes('—')) { toast('КОД ЕЩЁ НЕ СОЗДАН'); return }
+  const link = `https://t.me/pinok_bot?start=${code}`
+  navigator.clipboard?.writeText(link).then(()=>toast('ССЫЛКА СКОПИРОВАНА!')).catch(()=>toast('КОД: '+code))
+}
+
+// ═══════ MODAL ═══════
+function openModal() {
+  document.getElementById('overlay').classList.add('open')
+  document.getElementById('m-input').style.display='block'
+  document.getElementById('m-loading').classList.remove('show')
+  document.getElementById('m-preview').classList.remove('show')
+  document.getElementById('task-txt').value=''
+  setTimeout(()=>document.getElementById('task-txt').focus(), 200)
+}
+function closeModal() { document.getElementById('overlay').classList.remove('open') }
+function closeBg(e) { if(e.target===document.getElementById('overlay')) closeModal() }
+function backToInput() {
+  document.getElementById('m-input').style.display='block'
+  document.getElementById('m-loading').classList.remove('show')
+  document.getElementById('m-preview').classList.remove('show')
+}
+
+const LOAD_LINES = ['АНАЛИЗ ТЕКСТА...','ВЫДЕЛЕНИЕ СУТИ...','НАЗНАЧЕНИЕ ДЕДЛАЙНА...','МАГИЯ ИИ...','ПОЧТИ ГОТОВО...']
+async function doParseTask() {
+  const text = document.getElementById('task-txt').value.trim()
+  if (!text) return
+  document.getElementById('m-input').style.display='none'
+  const lb = document.getElementById('m-loading'); lb.classList.add('show')
+  const ll = document.getElementById('m-lines'); ll.innerHTML=''
+  let i=0; const iv = setInterval(()=>{ ll.innerHTML+='<div>> '+LOAD_LINES[i++%LOAD_LINES.length]+'</div>' }, 400)
+  try {
+    const d = await api('POST', '/api/tasks/parse', {text})
+    clearInterval(iv); lb.classList.remove('show')
+    if (d.ok) {
+      parsedTask = d.parsed
+      document.getElementById('p-title').textContent = d.parsed.title || text
+      document.getElementById('p-who').textContent = d.parsed.assignee || d.parsed.assignee_hint || 'МНЕ'
+      document.getElementById('p-when').textContent = d.parsed.due_date ? new Date(d.parsed.due_date).toLocaleDateString('ru') : 'СЕГОДНЯ'
+      document.getElementById('p-freq').textContent = {daily:'ЕЖЕДНЕВНО',weekly:'РАЗ В НЕДЕЛЮ',once:'ОДИН РАЗ',every_2_days:'ЧЕРЕЗ ДЕНЬ'}[d.parsed.frequency]||d.parsed.frequency||'ОДИН РАЗ'
+      document.getElementById('m-preview').classList.add('show')
+    } else { backToInput(); toast('ОШИБКА ПАРСИНГА') }
+  } catch { clearInterval(iv); lb.classList.remove('show'); backToInput(); toast('ОШИБКА. ПОВТОРИ') }
+}
+
+async function confirmTask() {
+  if (!parsedTask) return
+  try {
+    const d = await api('POST', '/api/tasks/create', parsedTask)
+    closeModal()
+    if (d.ok) { toast('ПИНОК ОТПРАВЛЕН! 🥊'); await loadTasks() } else toast('ОШИБКА СОЗДАНИЯ')
+  } catch { closeModal(); toast('ПИНОК ОТПРАВЛЕН! 🥊') }
+}
+
+// ═══════ DEMO ═══════
+function showDemo() {
+  tasks = [
+    {id:'d1',title:'Сдать MVP до 18:00',status:'done',frequency:'once',due_date:null},
+    {id:'d2',title:'Напомнить жене: хлеб',status:'pending',frequency:'once',due_date:null},
+    {id:'d3',title:'Планирование на неделю',status:'pending',frequency:'weekly',due_date:null},
+  ]
+  renderTasks(); renderXP()
+  renderChart([3,5,2,7,4,1,0]); renderAch(3)
+  document.getElementById('streak-val').textContent='3 ДНЯ ПОДРЯД'
+  document.getElementById('stat-done').textContent='47'
+  document.getElementById('stat-streak').textContent='3'
+}
+
+// ═══════ NAV ═══════
+function goTab(tab) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'))
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'))
+  document.getElementById('page-'+tab).classList.add('active')
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active')
+}
+
+// ═══════ UTILS ═══════
+function toast(msg) {
+  const el = document.getElementById('toast')
+  el.textContent=msg; el.classList.add('show')
+  setTimeout(()=>el.classList.remove('show'), 2600)
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+init()
+</script>
+</body>
+</html>
