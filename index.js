@@ -18,6 +18,7 @@ const voiceHandler = require('./handlers/voice')
 const { startScheduler } = require('./services/scheduler')
 const { startDigest } = require('./services/digest')
 const { supabase } = require('./db/supabase')
+const { replyMenuMain } = require('./utils/keyboards')
 
 startHandler(bot)
 familyHandler(bot)
@@ -35,13 +36,7 @@ bot.command('cancel', async (ctx) => {
       ? await supabase.from('users').select('family_id').eq('telegram_id', ctx.from.id).single()
       : { data: null }
     if (user?.family_id) {
-      await ctx.reply('Отменено.', {
-        reply_markup: {
-          keyboard: [['Добавить задачу'], ['Мои задачи', 'Семья']],
-          resize_keyboard: true,
-          is_persistent: true
-        }
-      })
+      await ctx.reply('Отменено.', replyMenuMain().reply_markup)
     } else {
       await ctx.reply('Отменено.', {
         reply_markup: {

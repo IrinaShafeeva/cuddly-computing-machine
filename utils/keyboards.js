@@ -6,17 +6,26 @@ const replyMenuNew = () =>
     .resize()
     .persistent()
 
-const replyMenuMain = () =>
-  Markup.keyboard([['Добавить задачу'], ['Мои задачи', 'Семья']])
-    .resize()
-    .persistent()
+const replyMenuMain = () => {
+  const rows = [['Добавить задачу'], ['Мои задачи', 'Семья']]
+  if (process.env.MINI_APP_URL) {
+    rows.push([{ text: '📱 Открыть приложение', web_app: { url: process.env.MINI_APP_URL } }])
+  }
+  return Markup.keyboard(rows).resize().persistent()
+}
 
-const mainMenuKeyboard = () => Markup.inlineKeyboard([
-  [Markup.button.callback('Добавить задачу', 'add_task')],
-  [Markup.button.callback('Мои задачи', 'my_tasks'),
-   Markup.button.callback('Семья', 'family_status')],
-  [Markup.button.callback('На неделю', 'week_tasks')]
-])
+const mainMenuKeyboard = () => {
+  const buttons = [
+    [Markup.button.callback('Добавить задачу', 'add_task')],
+    [Markup.button.callback('Мои задачи', 'my_tasks'),
+     Markup.button.callback('Семья', 'family_status')],
+    [Markup.button.callback('На неделю', 'week_tasks')]
+  ]
+  if (process.env.MINI_APP_URL) {
+    buttons.push([Markup.button.webApp('📱 Открыть приложение', process.env.MINI_APP_URL)])
+  }
+  return Markup.inlineKeyboard(buttons)
+}
 
 const startKeyboard = () => Markup.inlineKeyboard([
   [Markup.button.callback('Создать семью', 'create_family')],

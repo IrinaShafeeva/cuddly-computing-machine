@@ -1,5 +1,5 @@
 const { supabase } = require('../db/supabase')
-const { skipTemplateKeyboard, afterCreateFamilyKeyboard, timezoneKeyboard, TZ_BUTTONS } = require('../utils/keyboards')
+const { skipTemplateKeyboard, afterCreateFamilyKeyboard, timezoneKeyboard, TZ_BUTTONS, replyMenuMain } = require('../utils/keyboards')
 const { ERROR_MESSAGE } = require('../utils/messages')
 const { checkMemberLimit } = require('../services/subscription')
 const crypto = require('crypto')
@@ -141,13 +141,7 @@ module.exports = function (bot) {
         ctx.session.family = user.families
         await ctx.reply(
           'С возвращением!\n\nМеню внизу — добавь задачу, посмотри семью.',
-          {
-            reply_markup: {
-              keyboard: [['Добавить задачу'], ['Мои задачи', 'Семья']],
-              resize_keyboard: true,
-              is_persistent: true
-            }
-          }
+          replyMenuMain().reply_markup
         )
         return
       }
@@ -228,7 +222,7 @@ module.exports = function (bot) {
       ctx.session = {}
       await ctx.answerCbQuery()
       await ctx.editMessageText('Записал.')
-      await ctx.reply('Чем помочь?', { reply_markup: require('../utils/keyboards').mainMenuKeyboard().reply_markup })
+      await ctx.reply('Чем помочь?', replyMenuMain().reply_markup)
     } catch (e) {
       console.error(e)
       await ctx.answerCbQuery()
@@ -309,13 +303,7 @@ module.exports = function (bot) {
           await supabase.from('users').update({ request_template: text || null }).eq('id', user.id)
         }
         ctx.session = {}
-        await ctx.reply('Записал. Меню внизу — добавь задачу, посмотри семью.', {
-          reply_markup: {
-            keyboard: [['Добавить задачу'], ['Мои задачи', 'Семья']],
-            resize_keyboard: true,
-            is_persistent: true
-          }
-        })
+        await ctx.reply('Записал. Меню внизу — добавь задачу, посмотри семью.', replyMenuMain().reply_markup)
         return
       }
 
