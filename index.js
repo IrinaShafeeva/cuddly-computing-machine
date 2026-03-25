@@ -80,24 +80,114 @@ function validateInitData(initDataStr, token) {
   } catch { return null }
 }
 
-// ── Auth middleware ──
+// ── JWT helpers ──
+const jwt = require('jsonwebtoken')
+const bcrypt = require('bcryptjs')
+const JWT_SECRET = process.env.JWT_SECRET || 'pinok_secret_change_me'
+
+function signToken(userId) {
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '90d' })
+}
+
+// ── Auth middleware (supports both Telegram initData and JWT Bearer) ──
 async function authenticate(req, res, next) {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB not configured' })
+
+  // Try JWT first (mobile app)
+  const authHeader = req.headers['authorization'] || ''
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7)
+    try {
+      const { userId } = jwt.verify(token, JWT_SECRET)
+      const { data: user } = await supabase.from('users').select('id, name, role, family_id').eq('id', userId).single()
+      if (!user) return res.status(401).json({ ok: false, error: 'User not found' })
+      req.dbUser = user
+      return next()
+    } catch { return res.status(401).json({ ok: false, error: 'Invalid token' }) }
+  }
+
+  // Fallback: Telegram initData (mini app)
   const initData = req.headers['x-init-data'] || ''
   const tgUser = validateInitData(initData, process.env.BOT_TOKEN)
   const isDev = process.env.NODE_ENV !== 'production'
   if (!tgUser && !isDev) return res.status(401).json({ ok: false, error: 'Unauthorized' })
   const telegramId = tgUser?.id || (isDev && parseInt(req.headers['x-dev-id'])) || null
   if (!telegramId) return res.status(401).json({ ok: false, error: 'No user ID' })
-  const { data: user } = await supabase
-    .from('users')
-    .select('id, name, role, family_id')
-    .eq('telegram_id', telegramId)
-    .single()
+  const { data: user } = await supabase.from('users').select('id, name, role, family_id').eq('telegram_id', telegramId).single()
   if (!user) return res.status(404).json({ ok: false, error: 'User not found. Start the bot first.' })
   req.dbUser = user
   next()
 }
+
+// ── POST /api/auth/register ──
+app.post('/api/auth/register', async (req, res) => {
+  if (!supabase) return res.json({ ok: false, error: 'DB not configured' })
+  const { email, password, name } = req.body
+  if (!email || !password || !name) return res.json({ ok: false, error: 'Заполни все поля' })
+  if (password.length < 6) return res.json({ ok: false, error: 'Пароль минимум 6 символов' })
+  const { data: existing } = await supabase.from('users').select('id').eq('email', email.toLowerCase()).maybeSingle()
+  if (existing) return res.json({ ok: false, error: 'Email уже занят' })
+  const password_hash = await bcrypt.hash(password, 10)
+  const { data: user, error } = await supabase.from('users').insert({
+    email: email.toLowerCase(), password_hash, name, role: 'manager'
+  }).select('id, name, role, family_id').single()
+  if (error) return res.json({ ok: false, error: error.message })
+  res.json({ ok: true, token: signToken(user.id), user })
+})
+
+// ── POST /api/auth/login ──
+app.post('/api/auth/login', async (req, res) => {
+  if (!supabase) return res.json({ ok: false, error: 'DB not configured' })
+  const { email, password } = req.body
+  if (!email || !password) return res.json({ ok: false, error: 'Заполни все поля' })
+  const { data: user } = await supabase.from('users').select('id, name, role, family_id, password_hash').eq('email', email.toLowerCase()).maybeSingle()
+  if (!user || !user.password_hash) return res.json({ ok: false, error: 'Неверный email или пароль' })
+  const ok = await bcrypt.compare(password, user.password_hash)
+  if (!ok) return res.json({ ok: false, error: 'Неверный email или пароль' })
+  const { password_hash: _, ...safeUser } = user
+  res.json({ ok: true, token: signToken(user.id), user: safeUser })
+})
+
+// ── GET /api/auth/me ──
+app.get('/api/auth/me', authenticate, async (req, res) => {
+  const { data: family } = req.dbUser.family_id
+    ? await supabase.from('families').select('id, name, invite_code, plan').eq('id', req.dbUser.family_id).single()
+    : { data: null }
+  res.json({ ok: true, user: { ...req.dbUser, family } })
+})
+
+// ── POST /api/family/create ──
+app.post('/api/family/create', authenticate, async (req, res) => {
+  const { name, timezone } = req.body
+  if (!name) return res.json({ ok: false, error: 'Введи название' })
+  const inviteCode = require('crypto').randomBytes(3).toString('hex').toUpperCase()
+  const { data: family, error } = await supabase.from('families').insert({
+    name, invite_code: inviteCode, plan: 'free',
+    timezone: timezone || 'Europe/Moscow',
+    trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  }).select().single()
+  if (error) return res.json({ ok: false, error: error.message })
+  await supabase.from('users').update({ family_id: family.id }).eq('id', req.dbUser.id)
+  res.json({ ok: true, family })
+})
+
+// ── POST /api/family/join ──
+app.post('/api/family/join', authenticate, async (req, res) => {
+  const { code } = req.body
+  if (!code) return res.json({ ok: false, error: 'Введи код' })
+  const { data: family } = await supabase.from('families').select('*').eq('invite_code', code.toUpperCase()).maybeSingle()
+  if (!family) return res.json({ ok: false, error: 'Семья не найдена' })
+  await supabase.from('users').update({ family_id: family.id, role: 'member' }).eq('id', req.dbUser.id)
+  res.json({ ok: true, family })
+})
+
+// ── GET /api/family ──
+app.get('/api/family', authenticate, async (req, res) => {
+  if (!req.dbUser.family_id) return res.json({ ok: false, error: 'Нет семьи' })
+  const { data: family } = await supabase.from('families').select('*').eq('id', req.dbUser.family_id).single()
+  const { data: members } = await supabase.from('users').select('id, name, role').eq('family_id', req.dbUser.family_id)
+  res.json({ ok: true, family, members: members || [] })
+})
 
 // ── POST /api/auth ──
 app.post('/api/auth', async (req, res) => {

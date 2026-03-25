@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls c:/Users/Irina/Downloads/pinok_bot/*.js c:/Users/Irina/Downloads/pinok_bot/*.json c:/Users/Irina/Downloads/pinok_bot/*.yaml)",
+      "Bash(npm install:*)",
+      "Bash(find /c/Users/Irina/Downloads/pinok_bot -not -path */node_modules/* -not -path */.git/* -type f)",
+      "Read(//c/Users/Irina/Downloads/**)",
+      "Bash(npm --version)",
+      "Bash(npx create-expo-app@latest pinok_app --template blank)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Irina\\Downloads\\pinok_bot",
+      "c:\\Users\\Irina\\Downloads\\pinok_app"
+    ]
+  }
+}
