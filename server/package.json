@@ -1,0 +1,21 @@
+{
+  "name": "pinok-server",
+  "version": "1.0.0",
+  "description": "Пинок v2 — сервер: голосовая диагностика, пинки, push",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "multer": "^2.5.0",
+    "openai": "^4.104.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}
