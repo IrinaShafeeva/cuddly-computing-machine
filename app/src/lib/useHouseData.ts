@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useFocusEffect } from 'expo-router'
 import { supabase } from './supabase'
 import { useSession } from './session'
@@ -22,6 +22,7 @@ export function useHouseData() {
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(Date.now())
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hookId = useId()   // у каждого экрана свой realtime-канал
 
   const load = useCallback(async () => {
     if (!household) return
@@ -67,14 +68,14 @@ export function useHouseData() {
   useEffect(() => {
     if (!household) return
     const filter = `household_id=eq.${household.id}`
-    const ch = supabase.channel(`house:${household.id}`)
+    const ch = supabase.channel(`house:${household.id}:${hookId}`)
     for (const table of ['task_occurrences', 'flags', 'appliances', 'activity']) {
       ch.on('postgres_changes', { event: '*', schema: 'public', table, filter }, reloadSoon)
     }
     ch.subscribe()
     const tick = setInterval(() => setNow(Date.now()), 30_000)
     return () => { supabase.removeChannel(ch); clearInterval(tick) }
-  }, [household, reloadSoon])
+  }, [household, reloadSoon, hookId])
 
   return { ...data, loading, now, reload: load }
 }
