@@ -42,7 +42,8 @@ export type Task = {
   kick_plan: KickPlan
   source: 'manual' | 'flag' | 'penalty' | 'object' | 'event' | 'onboarding'
   status?: 'draft' | 'active' | 'paused' | 'archived'
-  photo_path?: string | null      // как должно выглядеть
+  photo_path?: string | null      // как должно выглядеть (первое фото)
+  photo_paths?: string[]          // все фото «как должно быть», до 5
   proof_photo?: boolean           // нужен фото-отчёт
   needs_review?: boolean          // автор проверяет
   guide_id?: string | null
@@ -70,6 +71,7 @@ export type Occurrence = {
   done_at: string | null
   snoozed_until: string | null
   proof_path?: string | null
+  proof_paths?: string[]          // фото-отчёт, до 5
   review?: 'pending' | 'approved' | 'rejected' | null
   reviewed_by?: string | null
   review_note?: string | null

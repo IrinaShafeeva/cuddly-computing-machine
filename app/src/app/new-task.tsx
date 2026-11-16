@@ -7,8 +7,9 @@ import { useSession } from '@/lib/session'
 import { buildKickPlan, kickPresets, parseTimes, type KickPresetKey } from '@/lib/plans'
 import { colors } from '@/lib/theme'
 import type { Guide, Recurrence, Task } from '@/lib/types'
-import { askPhoto } from '@/lib/photos'
-import { Photo } from '@/components/Photo'
+import { askPhotos } from '@/lib/photos'
+import { PhotoStrip, taskPhotos } from '@/components/Photo'
+import { VoiceTaskButton, type VoiceTask } from '@/components/VoiceTask'
 import { Body, Button, Chip, Input, Pixel, SectionTitle } from '@/components/ui'
 
 const ICONS = ['🗑', '🧹', '🍽', '🧺', '🪴', '🐕', '🚗', '🛒', '👶', '📚', '💸', '🔧']
@@ -41,9 +42,9 @@ export default function NewTask() {
   const [customTimes, setCustomTimes] = useState('')
   const [wakeUp, setWakeUp] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [photo, setPhoto] = useState<string | null>(null)
+  const [photos, setPhotos] = useState<string[]>([])
   const [proof, setProof] = useState(false)
-  const [review, setReview] = useState(false)
+  const [review, setReview] = useState(true)   // кто дал дело — тот и проверяет
   const [guideId, setGuideId] = useState<string | null>(null)
   const [guides, setGuides] = useState<Guide[]>([])
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function NewTask() {
       setLoaded(t)
       navigation.setOptions({ title: t.status === 'draft' ? 'Черновик' : 'Дело' })
       setTitle(t.title); setIcon(t.icon); setAssignee(t.assignee_id); setNotes(t.notes ?? '')
-      setPhoto(t.photo_path ?? null); setProof(!!t.proof_photo); setReview(!!t.needs_review); setGuideId(t.guide_id ?? null)
+      setPhotos(taskPhotos(t)); setProof(!!t.proof_photo); setReview(!!t.needs_review); setGuideId(t.guide_id ?? null)
       const r = t.recurrence as Recurrence
       setRepeat(r.type)
       if (r.type === 'weekly') setDays(r.days.map((d) => (d + 6) % 7))
@@ -81,6 +82,22 @@ export default function NewTask() {
       router.back()
     } },
   ])
+
+  // Надиктовала → заполняем форму; дальше можно поправить, прицепить фото и отправить
+  const [heard, setHeard] = useState<string | null>(null)
+  const fromVoice = (v: VoiceTask) => {
+    setHeard(v.transcript)
+    setTitle(v.title)
+    if (v.notes) setNotes(v.notes)
+    if (v.icon) setIcon(v.icon)
+    if (v.assignee && members.some((m) => m.id === v.assignee)) setAssignee(v.assignee)
+    setRepeat(v.repeat)
+    if (v.repeat === 'weekly') setDays(v.days.length ? v.days : [new Date().getDay() === 0 ? 6 : new Date().getDay() - 1])
+    if (v.repeat === 'every_n_days') setN(String(v.n))
+    if (v.repeat === 'monthly') setMonthDay(String(v.month_day))
+    if (v.repeat === 'once') setDayOffset(v.day_offset)
+    if (v.due_time) setDueTime(v.due_time)
+  }
 
   const toggleDay = (i: number) => setDays(days.includes(i) ? days.filter((d) => d !== i) : [...days, i])
 
@@ -116,13 +133,16 @@ export default function NewTask() {
       : await supabase.rpc('create_task', { p_household: household!.id, ...common, p_appliance: null })
     if (error) { setBusy(false); return Alert.alert('Ошибка', error.message) }
     const taskId = (saved as Task | null)?.id ?? id
-    const extrasChanged = photo !== (loaded?.photo_path ?? null) || proof !== !!loaded?.proof_photo
-      || review !== !!loaded?.needs_review || guideId !== (loaded?.guide_id ?? null)
+    const photosChanged = photos.join('|') !== (loaded ? taskPhotos(loaded) : []).join('|')
+    const extrasChanged = photosChanged || proof !== !!loaded?.proof_photo
+      || (review && assignee !== me) !== !!loaded?.needs_review || guideId !== (loaded?.guide_id ?? null)
     if (taskId && extrasChanged) {
       const { error: e2 } = await supabase.rpc('set_task_extras', {
-        p_task: taskId, p_photo: photo, p_proof: proof, p_review: review && assignee !== me, p_guide: guideId,
+        p_task: taskId, p_photo: photos[0] ?? null, p_proof: proof, p_review: review && assignee !== me, p_guide: guideId,
       })
-      if (e2) { setBusy(false); return Alert.alert('Фото/проверка не сохранились', e2.message) }
+      const { error: e3 } = !e2 && photosChanged
+        ? await supabase.rpc('set_task_photos', { p_task: taskId, p_photos: photos }) : { error: null }
+      if (e2 || e3) { setBusy(false); return Alert.alert('Фото/проверка не сохранились', (e2 ?? e3)!.message) }
     }
     setBusy(false)
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
@@ -132,8 +152,14 @@ export default function NewTask() {
   return (
     <ScrollView style={{ backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
       keyboardShouldPersistTaps="handled">
+      {!editing && <View style={{ marginBottom: 4 }}>
+        <VoiceTaskButton onParsed={fromVoice} />
+        {heard && <Body size={12} color={colors.dim} style={{ marginTop: 8 }}>
+          Услышала: «{heard}». Проверь ниже, прицепи фото — и «ДАТЬ ПИНОК».
+        </Body>}
+      </View>}
       <SectionTitle>ЧТО</SectionTitle>
-      <Input value={title} onChangeText={setTitle} placeholder="Вынести мусор" autoFocus={!editing} />
+      <Input value={title} onChangeText={setTitle} placeholder="Вынести мусор" />
       <Input value={notes} onChangeText={setNotes} placeholder="Описание: как, где, что важно (необязательно)" multiline
         style={{ minHeight: 60, textAlignVertical: 'top' }} />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
@@ -146,14 +172,16 @@ export default function NewTask() {
       </View>
 
       <SectionTitle>ФОТО: КАК ДОЛЖНО БЫТЬ</SectionTitle>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        {photo && <Photo path={photo} style={{ width: 90, height: 90 }} />}
-        <View style={{ flex: 1, gap: 8 }}>
-          <Button small variant="ghost" title={photo ? '📸 ДРУГОЕ ФОТО' : '📸 ДОБАВИТЬ ФОТО'}
-            onPress={async () => { const p = await askPhoto(household!.id, 'task', 'Как должно выглядеть'); if (p) setPhoto(p) }} />
-          {photo && <Button small variant="ghost" title="УБРАТЬ ФОТО" onPress={() => setPhoto(null)} />}
-        </View>
-      </View>
+      <PhotoStrip paths={photos} onRemove={(i) => setPhotos(photos.filter((_, j) => j !== i))} />
+      {photos.length < 5 && (
+        <Button small variant="ghost" style={{ marginTop: photos.length ? 8 : 0 }}
+          title={photos.length ? `📸 ЕЩЁ ФОТО (${photos.length}/5)` : '📸 ДОБАВИТЬ ФОТО'}
+          onPress={async () => {
+            const ps = await askPhotos(household!.id, 'task', 'Как должно выглядеть', 5 - photos.length)
+            if (ps.length) setPhotos([...photos, ...ps])
+          }} />
+      )}
+      <Body size={12} color={colors.dim} style={{ marginTop: 6 }}>До 5 фото: например, кухня с разных сторон.</Body>
 
       <SectionTitle>КТО</SectionTitle>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
@@ -173,7 +201,9 @@ export default function NewTask() {
       {repeat === 'once' && (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
           {[...(loaded?.due_at ? [[`Как было (${new Date(loaded.due_at).toLocaleDateString('ru', { day: 'numeric', month: 'short' })})`, -1]] : []),
-            ['Сегодня', 0], ['Завтра', 1], ['Послезавтра', 2], ['Через неделю', 7]].map(([l, o]) => (
+            ['Сегодня', 0], ['Завтра', 1], ['Послезавтра', 2], ['Через неделю', 7],
+            ...(dayOffset > 2 && dayOffset !== 7 ? [[(() => { const d = new Date(); d.setDate(d.getDate() + dayOffset)
+              return d.toLocaleDateString('ru', { weekday: 'short', day: 'numeric', month: 'short' }) })(), dayOffset]] : [])].map(([l, o]) => (
             <Chip key={l} label={l as string} color={colors.yellow} active={dayOffset === o} onPress={() => setDayOffset(o as number)} />
           ))}
         </View>
@@ -229,7 +259,7 @@ export default function NewTask() {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
           <View style={{ flex: 1 }}>
             <Body>👀 Я проверяю</Body>
-            <Body size={12} color={colors.dim}>«сделано» придёт тебе: принять или вернуть (звёзды заберём)</Body>
+            <Body size={12} color={colors.dim}>кто дал дело — тот и проверяет: «сделано» придёт тебе, принять или вернуть (звёзды заберём)</Body>
           </View>
           <Switch value={review} onValueChange={setReview} trackColor={{ true: colors.green, false: colors.card2 }} />
         </View>

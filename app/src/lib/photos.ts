@@ -66,3 +66,20 @@ export function usePhotoUrl(path: string | null | undefined) {
   }, [path])
   return url
 }
+
+// Несколько фото подряд: сфоткал → «Ещё фото?» → … (до max). Пусто — если отменил первое.
+export async function askPhotos(householdId: string, folder: string, title: string, max = 5): Promise<string[]> {
+  const out: string[] = []
+  while (out.length < max) {
+    const p = await askPhoto(householdId, folder, out.length ? `${title} · ещё фото ${out.length + 1}/${max}` : title)
+    if (!p) break
+    out.push(p)
+    if (out.length >= max) break
+    const more = await new Promise<boolean>((resolve) => Alert.alert(`Фото: ${out.length}`, 'Добавить ещё?', [
+      { text: 'Хватит', style: 'cancel', onPress: () => resolve(false) },
+      { text: '📸 Ещё фото', onPress: () => resolve(true) },
+    ], { cancelable: true, onDismiss: () => resolve(false) }))
+    if (!more) break
+  }
+  return out
+}

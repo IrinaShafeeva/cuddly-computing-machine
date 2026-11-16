@@ -40,7 +40,8 @@ drop function if exists is_member(uuid), is_adult(uuid),
   update_person(uuid, uuid, text, text), merge_person(uuid, uuid, uuid), remove_person(uuid, uuid),
   _photo_member(text), set_task_extras(uuid, text, boolean, boolean, uuid), complete_occurrence(uuid, text),
   review_occurrence(uuid, boolean, text), save_guide(uuid, uuid, text, text, text, jsonb), delete_guide(uuid),
-  add_guide_photo(uuid, text, text), ask_to_buy(uuid, uuid[], text) cascade;
+  add_guide_photo(uuid, text, text), ask_to_buy(uuid, uuid[], text),
+  _own_photos(uuid, text[]), set_task_photos(uuid, text[]), complete_occurrence(uuid, text, text[]) cascade;
 drop trigger if exists on_auth_user_created on auth.users;
 
 -- ── 3. Новая схема ──

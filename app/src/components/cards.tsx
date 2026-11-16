@@ -9,8 +9,8 @@ import { colors, heatColor } from '@/lib/theme'
 import type { Appliance, Flag, Occurrence, Task } from '@/lib/types'
 import { Avatar, Body, Button, HeatCard, Pixel } from './ui'
 import { showKickSent } from './KickFx'
-import { Photo } from './Photo'
-import { askPhoto } from '@/lib/photos'
+import { PhotoCover, PhotoStrip, proofPhotos, taskPhotos } from './Photo'
+import { askPhoto, askPhotos } from '@/lib/photos'
 
 function fail(e: { message: string } | null) {
   if (e) Alert.alert('Не получилось', e.message)
@@ -52,14 +52,21 @@ export function OccurrenceCard({ o, now }: { o: Occurrence; now: number }) {
   const { household } = useSession()
   const author = member(o.task.created_by)
   const complete = async () => {
-    // Фото-отчёт: без фото дело не закрыть
-    let proof: string | null = null
+    // Фото-отчёт: если нужен — без фото дело не закрыть; если автор проверяет — предложим приложить
+    let proofs: string[] = []
     if (o.task.proof_photo) {
-      proof = await askPhoto(household!.id, 'proof', 'Фото-отчёт: покажи, что сделано')
-      if (!proof) return
+      proofs = await askPhotos(household!.id, 'proof', 'Фото-отчёт: покажи, что сделано')
+      if (!proofs.length) return
+    } else if (o.task.needs_review && o.task.created_by !== me) {
+      const want = await new Promise<boolean>((resolve) => Alert.alert('Сделано! 📸 Приложить фото?',
+        `${author?.display_name ?? 'Автор'} проверит — с фото примут быстрее.`, [
+          { text: 'Без фото', style: 'cancel', onPress: () => resolve(false) },
+          { text: '📸 Сфоткать', onPress: () => resolve(true) },
+        ], { cancelable: true, onDismiss: () => resolve(false) }))
+      if (want) proofs = await askPhotos(household!.id, 'proof', 'Покажи, что сделано')
     }
     setBusy(true)
-    const { data, error } = await supabase.rpc('complete_occurrence', { p_occurrence: o.id, p_proof: proof })
+    const { data, error } = await supabase.rpc('complete_occurrence', { p_occurrence: o.id, p_proofs: proofs })
     setBusy(false)
     if (fail(error)) return
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
@@ -117,9 +124,7 @@ export function OccurrenceCard({ o, now }: { o: Occurrence; now: number }) {
             <Body size={12} color={colors.dim} numberOfLines={2} style={{ marginTop: 3 }}>{o.task.notes}</Body>
           ) : null}
         </Pressable>
-        {(done ? o.proof_path : o.task.photo_path) ? (
-          <Photo path={done ? o.proof_path : o.task.photo_path} style={{ width: 44, height: 44 }} />
-        ) : null}
+        <PhotoCover paths={done && proofPhotos(o).length ? proofPhotos(o) : taskPhotos(o.task)} style={{ width: 44, height: 44 }} />
         {assignee && !mine && <Avatar name={assignee.display_name} color={assignee.color} />}
         {!done && !mine && <GloveButton onFire={kick} onTap={() => pop.show('Держи 🥊, чтобы пнуть')} />}
       </View>
@@ -155,8 +160,14 @@ export function ReviewCard({ o, onDone }: { o: Occurrence; onDone?: () => void }
         </View>
         {doer && <Avatar name={doer.display_name} color={doer.color} />}
       </View>
-      {o.proof_path ? <Photo path={o.proof_path} style={{ width: '100%', height: 200, marginTop: 10 }} />
-        : <Body size={12} color={colors.dimmer} style={{ marginTop: 8 }}>без фото — проверь глазами</Body>}
+      {proofPhotos(o).length ? <>
+        <Pixel size={7} color={colors.dim} style={{ marginTop: 12, marginBottom: 6 }}>ВОТ ЧТО СДЕЛАНО</Pixel>
+        <PhotoStrip paths={proofPhotos(o)} size={150} />
+      </> : <Body size={12} color={colors.dimmer} style={{ marginTop: 8 }}>без фото — проверь глазами</Body>}
+      {taskPhotos(o.task).length ? <>
+        <Pixel size={7} color={colors.dim} style={{ marginTop: 12, marginBottom: 6 }}>КАК ДОЛЖНО БЫТЬ</Pixel>
+        <PhotoStrip paths={taskPhotos(o.task)} size={70} />
+      </> : null}
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
         <Button small title="ПРИНЯТО ✅" onPress={() => send(true)} loading={busy} style={{ flex: 1 }} />
         <Button small variant="danger" title="НЕ СДЕЛАНО ↩" onPress={reject} style={{ flex: 1 }} />
