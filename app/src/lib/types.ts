@@ -2,7 +2,7 @@ export type Role = 'adult' | 'child' | 'guest'
 
 export type Profile = { id: string; display_name: string; avatar: string | null }
 
-export type Member = Profile & { role: Role; color: string }
+export type Member = Profile & { role: Role; color: string; is_placeholder?: boolean }
 
 export type Household = {
   id: string
@@ -22,6 +22,7 @@ export type KickPlan = {
   base:
     | { type: 'times'; times: string[] }
     | { type: 'every'; minutes: number; between: [string, string] }
+    | { type: 'before'; minutes: number }        // один раз — за N минут до срока
   escalation: (
     | { before: string; type: 'times'; times: string[] }
     | { before: string; type: 'every'; minutes: number; between: [string, string] }
@@ -39,8 +40,25 @@ export type Task = {
   assignee_id: string
   recurrence: Recurrence
   kick_plan: KickPlan
-  source: 'manual' | 'flag' | 'penalty' | 'object'
+  source: 'manual' | 'flag' | 'penalty' | 'object' | 'event' | 'onboarding'
+  status?: 'draft' | 'active' | 'paused' | 'archived'
+  photo_path?: string | null      // как должно выглядеть
+  proof_photo?: boolean           // нужен фото-отчёт
+  needs_review?: boolean          // автор проверяет
+  guide_id?: string | null
 }
+
+export type Guide = {
+  id: string
+  title: string
+  icon: string | null
+  place: string | null
+  steps: { text: string }[]
+  created_by: string | null
+  updated_at: string
+}
+
+export type GuidePhoto = { id: string; guide_id: string; kind: 'item' | 'place'; path: string; by_user: string | null; created_at: string }
 
 export type Occurrence = {
   id: string
@@ -51,6 +69,10 @@ export type Occurrence = {
   done_by: string | null
   done_at: string | null
   snoozed_until: string | null
+  proof_path?: string | null
+  review?: 'pending' | 'approved' | 'rejected' | null
+  reviewed_by?: string | null
+  review_note?: string | null
   task: Task
 }
 

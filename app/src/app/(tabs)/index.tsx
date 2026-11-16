@@ -7,7 +7,7 @@ import { useSession } from '@/lib/session'
 import { useHouseData } from '@/lib/useHouseData'
 import { applianceHeat, flagHeat, heatRank, occurrenceHeat } from '@/lib/heat'
 import { colors } from '@/lib/theme'
-import { ApplianceCard, FlagCard, OccurrenceCard } from '@/components/cards'
+import { ApplianceCard, FlagCard, OccurrenceCard, ReviewCard } from '@/components/cards'
 import { Body, Empty, Pixel, SectionTitle } from '@/components/ui'
 
 const WEEK_GOAL = 500
@@ -64,6 +64,11 @@ export default function Home() {
           <Pixel size={8} color="#fff" style={s.xpPct}>{pct}%</Pixel>
         </View>
 
+        {d.reviews.length > 0 && <>
+          <SectionTitle>👀 НА ПРОВЕРКУ · {d.reviews.length}</SectionTitle>
+          {d.reviews.map((o) => <ReviewCard key={o.id} o={o} onDone={d.reload} />)}
+        </>}
+
         <SectionTitle>ПРИБОРЫ</SectionTitle>
         {appliances.length
           ? appliances.map((a) => <ApplianceCard key={a.id} a={a} now={d.now} />)
@@ -73,6 +78,13 @@ export default function Home() {
         {flags.length
           ? flags.map((f) => <FlagCard key={f.id} f={f} now={d.now} />)
           : <Empty icon="🏳️" text="Никто ничего не просит. Подозрительно." />}
+
+        {d.drafts.length > 0 && (
+          <Pressable onPress={() => router.push('/tasks')}
+            style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: colors.dimmer, padding: 12, marginTop: 16 }}>
+            <Body color={colors.dim}>📝 Черновиков: {d.drafts.length} — разбери, когда будет минутка →</Body>
+          </Pressable>
+        )}
 
         <SectionTitle>МОИ ДЕЛА</SectionTitle>
         {mine.length

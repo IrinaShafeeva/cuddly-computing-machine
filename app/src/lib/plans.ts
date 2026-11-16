@@ -28,7 +28,7 @@ export function parseTimes(text: string): string[] {
 export function buildKickPlan(preset: KickPresetKey, dueTime: string, customTimes: string, wakeUp: boolean): KickPlan {
   const base = { overdue: 'keep_kicking' as const, wake_up: wakeUp, escalation: [] as KickPlan['escalation'] }
   switch (preset) {
-    case 'once': return { ...base, base: { type: 'times', times: [hourBefore(dueTime)] } }
+    case 'once': return { ...base, base: { type: 'before', minutes: 60 } }
     case 'morning': return { ...base, base: { type: 'times', times: ['08:00'] } }
     case 'three': return { ...base, base: { type: 'times', times: ['08:00', '13:00', '19:00'] } }
     case 'escalate': return {

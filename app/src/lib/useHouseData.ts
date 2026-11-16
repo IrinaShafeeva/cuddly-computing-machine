@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useFocusEffect } from 'expo-router'
 import { supabase } from './supabase'
 import { useSession } from './session'
-import type { Activity, Appliance, Flag, Occurrence } from './types'
+import type { Activity, Appliance, Flag, Occurrence, Task } from './types'
 
 export type HouseData = {
   occurrences: Occurrence[]   // открытые/пропущенные + сделанные сегодня
@@ -11,13 +11,16 @@ export type HouseData = {
   stars: Record<string, number>
   weekStars: Record<string, number>
   activity: Activity[]
+  drafts: Task[]             // мои черновики дел (после голосового разбора)
+  reviews: Occurrence[]      // «сделано» — ждут моей проверки
 }
 
-const empty: HouseData = { occurrences: [], flags: [], appliances: [], stars: {}, weekStars: {}, activity: [] }
+const empty: HouseData = { occurrences: [], flags: [], appliances: [], stars: {}, weekStars: {}, activity: [], drafts: [], reviews: [] }
 
 // Все данные дома + realtime-обновления + «тик» раз в 30 с, чтобы огонь разгорался сам
 export function useHouseData() {
-  const { household } = useSession()
+  const { household, session } = useSession()
+  const me = session?.user.id
   const [data, setData] = useState<HouseData>(empty)
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(Date.now())
@@ -30,7 +33,7 @@ export function useHouseData() {
     await supabase.rpc('ensure_today', { p_household: hh })
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0)
     const weekAgo = new Date(Date.now() - 7 * 86400_000)
-    const [open, doneToday, flags, appliances, ledger, activity] = await Promise.all([
+    const [open, doneToday, flags, appliances, ledger, activity, drafts, reviews] = await Promise.all([
       supabase.from('task_occurrences').select('*, task:tasks(*)').eq('household_id', hh)
         .in('status', ['open', 'missed']).order('due_at'),
       supabase.from('task_occurrences').select('*, task:tasks(*)').eq('household_id', hh)
@@ -41,6 +44,10 @@ export function useHouseData() {
       supabase.from('star_ledger').select('user_id, amount, created_at').eq('household_id', hh),
       supabase.from('activity').select('*').eq('household_id', hh)
         .order('created_at', { ascending: false }).limit(50),
+      supabase.from('tasks').select('*').eq('household_id', hh).eq('status', 'draft').eq('created_by', me ?? '')
+        .order('created_at'),
+      supabase.from('task_occurrences').select('*, task:tasks!inner(*)').eq('household_id', hh)
+        .eq('status', 'done').eq('review', 'pending').eq('task.created_by', me ?? '').order('done_at'),
     ])
     const stars: Record<string, number> = {}
     const weekStars: Record<string, number> = {}
@@ -54,9 +61,11 @@ export function useHouseData() {
       appliances: (appliances.data ?? []) as Appliance[],
       stars, weekStars,
       activity: (activity.data ?? []) as Activity[],
+      drafts: (drafts.data ?? []) as Task[],
+      reviews: ((reviews.data ?? []) as Occurrence[]).filter((o) => o.done_by !== me),
     })
     setLoading(false)
-  }, [household])
+  }, [household, me])
 
   const reloadSoon = useCallback(() => {
     if (timer.current) clearTimeout(timer.current)

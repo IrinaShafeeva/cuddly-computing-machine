@@ -1,9 +1,9 @@
 // Уровни пинков и фразы (docs/PRODUCT.md §4)
 export const kickLevels = {
-  1: { name: 'Лёгкий пинок', emoji: '🦶' },
-  2: { name: 'Пинок с разбега', emoji: '🏃🦶' },
-  3: { name: 'Пинок с вертушки', emoji: '🌀🦶' },
-  4: { name: 'КОСМИЧЕСКИЙ ПИНОК', emoji: '🚀🦶' },
+  1: { name: 'Лёгкий пинок', emoji: '🥊' },
+  2: { name: 'Пинок с разбега', emoji: '🥊💨' },
+  3: { name: 'Пинок с вертушки', emoji: '🌀🥊' },
+  4: { name: 'КОСМИЧЕСКИЙ ПИНОК', emoji: '⚡🥊⚡' },
 } as const
 
 const phrases: Record<1 | 2 | 3 | 4, string[]> = {

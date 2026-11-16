@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Animated, Pressable, View } from 'react-native'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import * as Haptics from 'expo-haptics'
 import {
   AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState,
 } from 'expo-audio'
-import { api, apiConfigured } from '@/lib/api'
+import { File } from 'expo-file-system'
+import { api } from '@/lib/api'
 import { useSession } from '@/lib/session'
-import { uid, useWizard, type DiagItem } from '@/lib/wizard'
+import { supabase } from '@/lib/supabase'
+import { mergeItems, uid, useWizard, type DiagItem } from '@/lib/wizard'
 import { colors } from '@/lib/theme'
+import { forgetRecording, pendingRecordings, uploadRecording, type PendingRecording } from '@/lib/voiceStore'
 import { Step } from '@/components/Step'
 import { Body, Button, Input, Pixel } from '@/components/ui'
 
@@ -22,16 +25,36 @@ const PROMPTS = [
   'Что у вас обычно заканчивается?',
 ]
 
-// Шаг 4: расскажи голосом (или текстом) → ИИ раскладывает на дела
+// Шаг 4: расскажи голосом (или текстом) → ИИ раскладывает на дела.
+// mode=more — «Рассказать ещё»: новые дела добавляются к уже найденным.
+// from=list — пришли со списка «Перераспределим» (вернуться назад);
+// иначе — из вкладки «Семья»: подтягиваем последнюю диагностику и идём к списку
 export default function Voice() {
-  const { household } = useSession()
+  const { session, household } = useSession()
   const w = useWizard()
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
+  const { mode, from } = useLocalSearchParams<{ mode?: string; from?: string }>()
+  const more = mode === 'more'
+
+  // «Дополнить» из вкладки «Семья»: подтянуть прошлую диагностику
+  useEffect(() => {
+    if (!more || from === 'list' || w.items.length || !household || !session) return
+    supabase.from('diagnoses').select('items').eq('household_id', household.id).eq('user_id', session.user.id)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => {
+        const prev = ((data?.items ?? []) as Omit<DiagItem, 'id'>[]).map((i) => ({ ...i, id: uid(), existing: true }))
+        if (prev.length) w.setItems(() => prev)
+      })
+  }, [more, household, session]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Речь: моно 64 кбит/с (≈0,5 МБ в минуту) и постоянная папка — система не сотрёт запись
+  const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, numberOfChannels: 1, bitRate: 64000, directory: 'document' })
   const state = useAudioRecorderState(recorder)
   const [busy, setBusy] = useState(false)
   const [typing, setTyping] = useState(false)
   const [text, setText] = useState('')
   const pulse = useRef(new Animated.Value(1)).current
+  const [pending, setPending] = useState<PendingRecording[]>([])
+  const refreshPending = () => { try { setPending(pendingRecordings()) } catch (e) { console.warn(e) } }
+  useEffect(refreshPending, [])
 
   useEffect(() => {
     if (!state.isRecording) { pulse.setValue(1); return }
@@ -52,20 +75,28 @@ export default function Voice() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
   }
 
-  const send = async (body: FormData) => {
+  const send = async (body: { household_id: string; text?: string }, audio?: File) => {
     setBusy(true)
     try {
-      const r = await api<Parsed>('/diagnosis/parse', body)
-      w.setTranscript(r.transcript)
-      w.setItems(() => r.items.map((i) => ({ ...i, id: uid() })))
-      w.setStock(r.stock)
-      w.setCovered(r.covered)
+      // Сначала запись уходит в хранилище — даже если разбор упадёт, она не потеряется
+      const audio_path = audio ? await uploadRecording(audio, session!.user.id) : undefined
+      const r = await api<Parsed>('diagnosis-parse', { ...body, audio_path })
+      if (audio) forgetRecording(audio)
+      const found = r.items.map((i) => ({ ...i, id: uid() }))
+      w.setTranscript([w.transcript, r.transcript].filter(Boolean).join('\n\n'))
+      w.setItems((prev) => mergeItems(prev, found))
+      w.setStock([...new Set([...w.stock, ...r.stock])])
+      w.setCovered([...new Set([...w.covered, ...r.covered])])
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-      router.push('/onboarding/cards')
+      if (!more) router.push('/onboarding/cards')
+      else if (from === 'list') router.back()
+      else router.replace({ pathname: '/onboarding/redistribute', params: { mode: 'more' } })
     } catch (e: any) {
-      Alert.alert('Не получилось разобрать', e.message)
+      Alert.alert('Не получилось разобрать',
+        `${e.message}${audio ? '\n\nЗапись сохранена — нажми «Разобрать» на ней, чтобы попробовать ещё раз.' : ''}`)
     } finally {
       setBusy(false)
+      refreshPending()
     }
   }
 
@@ -73,33 +104,44 @@ export default function Voice() {
     await recorder.stop()
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true })
     if (!recorder.uri) return
-    const fd = new FormData()
-    fd.append('household_id', household!.id)
-    fd.append('audio', { uri: recorder.uri, name: 'voice.m4a', type: 'audio/m4a' } as any)
-    send(fd)
+    send({ household_id: household!.id }, new File(recorder.uri))
   }
 
   const sendText = () => {
     if (text.trim().length < 20) return Alert.alert('Расскажи чуть подробнее')
-    const fd = new FormData()
-    fd.append('household_id', household!.id)
-    fd.append('text', text.trim())
-    send(fd)
+    send({ household_id: household!.id, text: text.trim() })
   }
 
   const sec = Math.floor((state.durationMillis ?? 0) / 1000)
 
   return (
-    <Step n={4} title="РАССКАЖИ ГОЛОСОМ"
-      subtitle="Как подруге, 1–3 минуты. Не надо списков — просто рассказывай. Пинок сам найдёт все дела, даже те, что ты не считаешь работой."
+    <Step n={4} title={more ? 'РАССКАЖИ ЕЩЁ' : 'РАССКАЖИ ГОЛОСОМ'}
+      subtitle={more
+        ? 'Что ещё вспомнилось? Новые дела добавятся к списку, повторы Пинок уберёт сам.'
+        : 'Как подруге, 1–3 минуты. Не надо списков — просто рассказывай. Пинок сам найдёт все дела, даже те, что ты не считаешь работой.'}
       footer={<>
-        {!apiConfigured && <Body size={12} color={colors.yellow} style={{ textAlign: 'center' }}>Сервер ещё не подключён — этот шаг пока можно пропустить</Body>}
         <Button variant="ghost" small title={typing ? 'ЛУЧШЕ ГОЛОСОМ' : 'НАПИСАТЬ ТЕКСТОМ'} onPress={() => setTyping(!typing)} />
-        <Button variant="ghost" small title="ПРОПУСТИТЬ" onPress={() => router.push('/onboarding/cards')} style={{ borderColor: colors.dimmer }} />
+        <Button variant="ghost" small title={more ? 'НАЗАД' : 'ПРОПУСТИТЬ'} style={{ borderColor: colors.dimmer }}
+          onPress={() => (more ? router.back() : router.push('/onboarding/cards'))} />
       </>}>
       <View style={{ gap: 8, marginBottom: 24 }}>
         {PROMPTS.map((p) => <Body key={p} color={colors.text}>▸ {p}</Body>)}
       </View>
+
+      {!busy && !state.isRecording && pending.length > 0 && (
+        <View style={{ gap: 8, marginBottom: 20, padding: 12, borderWidth: 2, borderColor: colors.yellow }}>
+          <Pixel size={9} color={colors.yellow}>📼 НЕРАЗОБРАННЫЕ ЗАПИСИ</Pixel>
+          {pending.map((p) => (
+            <View key={p.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Body size={13} color={colors.text} style={{ flex: 1 }}>
+                {p.at ? new Date(p.at).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Запись'}
+                {' · '}{(p.size / 1048576).toFixed(1)} МБ
+              </Body>
+              <Button small title="РАЗОБРАТЬ" onPress={() => send({ household_id: household!.id }, p.file)} />
+            </View>
+          ))}
+        </View>
+      )}
 
       {busy ? (
         <View style={{ alignItems: 'center', paddingVertical: 40 }}>

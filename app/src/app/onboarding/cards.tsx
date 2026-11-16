@@ -1,20 +1,28 @@
-import { useRef, useState } from 'react'
-import { Animated, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { ActivityIndicator, Animated, View } from 'react-native'
 import { router } from 'expo-router'
 import * as Haptics from 'expo-haptics'
-import { INVISIBLE_CARDS } from '@/lib/cards'
+import { supabase } from '@/lib/supabase'
 import { useSession } from '@/lib/session'
 import { uid, useWizard } from '@/lib/wizard'
 import { colors } from '@/lib/theme'
 import { Step } from '@/components/Step'
 import { Body, Button, Pixel } from '@/components/ui'
 
-// Шаг 5: «Это тоже ты?» — карточки невидимого труда по одной
+type Card = { key: string; emoji: string; title: string; per_week: number }
+
+// Шаг 5: «Это тоже ты?» — карточки невидимого труда по одной.
+// Список — в базе (invisible_cards), уже с учётом «что есть дома»; то, что рассказано голосом, пропускаем
 export default function Cards() {
-  const { session, members } = useSession()
+  const { session, household, members } = useSession()
   const me = session?.user.id
   const w = useWizard()
-  const deck = INVISIBLE_CARDS.filter((c) => !w.covered.includes(c.key))
+  const [all, setAll] = useState<Card[] | null>(null)
+  useEffect(() => {
+    if (!household) return
+    supabase.rpc('cards_for', { p_household: household.id }).then(({ data }) => setAll((data ?? []) as Card[]))
+  }, [household])
+  const deck = (all ?? []).filter((c) => !w.covered.includes(c.key))
   const [i, setI] = useState(0)
   const slide = useRef(new Animated.Value(0)).current
   const card = deck[i]
@@ -24,7 +32,7 @@ export default function Cards() {
     if (who) {
       w.setItems((prev) => [...prev, {
         id: uid(), title: card.title, who, freq: card.per_week >= 5 ? 'daily' : card.per_week >= 1 ? 'weekly' : 'monthly',
-        per_week: card.per_week, invisible: true, emoji: card.emoji, source: 'card',
+        per_week: Number(card.per_week), invisible: true, emoji: card.emoji, source: 'card',
       }])
     }
     Animated.timing(slide, { toValue: 1, duration: 160, useNativeDriver: true }).start(() => {
@@ -32,6 +40,10 @@ export default function Cards() {
       if (i + 1 >= deck.length) router.push('/onboarding/truth')
       else setI(i + 1)
     })
+  }
+
+  if (!all) {
+    return <Step n={5} title="ЭТО ТОЖЕ ТЫ?"><ActivityIndicator color={colors.green} /></Step>
   }
 
   if (!card) {

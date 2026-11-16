@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { memberColors } from './theme'
+import { registerForPush, unregisterPush } from './push'
 import type { Household, Member, Profile } from './types'
 
 type Ctx = {
@@ -38,9 +39,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setMe(profile ?? null)
     const hh = (membership?.households ?? null) as unknown as Household | null
     setHousehold(hh)
+    if (hh) registerForPush()
     if (hh) {
       const { data: rows } = await supabase.from('household_members')
-        .select('role, color, joined_at, profiles(id, display_name, avatar)')
+        .select('role, color, joined_at, profiles(id, display_name, avatar, is_placeholder)')
         .eq('household_id', hh.id).order('joined_at')
       setMembers((rows ?? []).map((r: any, i: number) => ({
         ...r.profiles, role: r.role, color: r.color ?? memberColors[i % memberColors.length],
@@ -67,7 +69,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     ready, session, me, household, members,
     member: (id) => members.find((m) => m.id === id),
     reload: () => load(session),
-    signOut: async () => { await supabase.auth.signOut() },
+    signOut: async () => { await unregisterPush(); await supabase.auth.signOut() },
   }
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
 }

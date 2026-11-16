@@ -28,7 +28,7 @@ export default function Truth() {
       p_household: household!.id,
       p_items: w.items.map(({ id, ...rest }) => rest),
       p_transcript: w.transcript || null,
-    }).then(({ data }) => setDiagId((data as any)?.id ?? null))
+    }).then(({ data }) => { setDiagId((data as any)?.id ?? null); w.setSavedCount(w.items.length) })
     // Цифра «набегает», телефон вибрирует в конце
     const sub = count.addListener(({ value }) => setShown(Math.round(value)))
     Animated.timing(count, { toValue: pct, duration: 1600, useNativeDriver: false }).start(() =>

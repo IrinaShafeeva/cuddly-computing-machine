@@ -1,23 +1,22 @@
 import { supabase } from './supabase'
 
-const API = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '')
+// Серверная часть — Supabase Edge Functions (supabase/functions/*)
+const FUNCTIONS = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1`
+const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? ''
 
-export const apiConfigured = !!API
-
-// Запрос к серверу Пинка с токеном пользователя
-export async function api<T>(path: string, body: FormData | object): Promise<T> {
-  if (!API) throw new Error('Сервер Пинка ещё не подключён (EXPO_PUBLIC_API_URL)')
+export async function api<T>(fn: string, body: FormData | object): Promise<T> {
   const { data } = await supabase.auth.getSession()
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`${FUNCTIONS}/${fn}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+      apikey: KEY,
+      Authorization: `Bearer ${data.session?.access_token ?? KEY}`,
       ...(isForm ? {} : { 'Content-Type': 'application/json' }),
     },
     body: isForm ? (body as FormData) : JSON.stringify(body),
   })
   const json = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(json.error || `Ошибка сервера ${res.status}`)
+  if (!res.ok) throw new Error([json.error || `Ошибка сервера ${res.status}`, json.detail].filter(Boolean).join('\n\n'))
   return json as T
 }

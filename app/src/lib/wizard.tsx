@@ -9,7 +9,8 @@ export type DiagItem = {
   per_week: number
   invisible: boolean
   emoji: string | null
-  source: 'voice' | 'card'
+  source: 'voice' | 'card' | 'manual'
+  existing?: boolean          // из прошлой диагностики (режим «Дополнить»)
 }
 
 type Wizard = {
@@ -21,6 +22,8 @@ type Wizard = {
   setStock: (s: string[]) => void
   covered: string[]
   setCovered: (c: string[]) => void
+  savedCount: number            // сколько дел было в сохранённом снимке (0 — ещё не сохраняли)
+  setSavedCount: (n: number) => void
   invites: { profile_id: string; name: string; token: string }[]
   addInvite: (i: { profile_id: string; name: string; token: string }) => void
 }
@@ -33,10 +36,11 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const [stock, setStock] = useState<string[]>([])
   const [covered, setCovered] = useState<string[]>([])
   const [invites, setInvites] = useState<Wizard['invites']>([])
+  const [savedCount, setSavedCount] = useState(0)
   return (
     <Ctx.Provider value={{
       items, setItems: (f) => setItemsState(f), transcript, setTranscript,
-      stock, setStock, covered, setCovered,
+      stock, setStock, covered, setCovered, savedCount, setSavedCount,
       invites, addInvite: (i) => setInvites((prev) => [...prev, i]),
     }}>
       {children}
@@ -65,4 +69,12 @@ export function shares(items: DiagItem[]) {
   }
   return Object.fromEntries(Object.entries(by).map(([k, v]) =>
     [k, { ...v, share: all ? v.total / all : 0 }]))
+}
+
+const norm = (t: string) => t.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, ' ').trim()
+
+// Добавить новые дела к списку без повторов (по названию)
+export function mergeItems(prev: DiagItem[], incoming: DiagItem[]) {
+  const seen = new Set(prev.map((i) => norm(i.title)))
+  return [...prev, ...incoming.filter((i) => !seen.has(norm(i.title)) && seen.add(norm(i.title)))]
 }

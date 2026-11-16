@@ -6,8 +6,8 @@ import { useSession } from '@/lib/session'
 import { useHouseData } from '@/lib/useHouseData'
 import { heatRank, occurrenceHeat } from '@/lib/heat'
 import { colors } from '@/lib/theme'
-import { OccurrenceCard } from '@/components/cards'
-import { Button, Chip, Empty, Pixel, SectionTitle } from '@/components/ui'
+import { DraftCard, OccurrenceCard } from '@/components/cards'
+import { Body, Button, Chip, Empty, Pixel, SectionTitle } from '@/components/ui'
 
 export default function Tasks() {
   const { session, members } = useSession()
@@ -42,6 +42,14 @@ export default function Tasks() {
         {done.length > 0 && <>
           <SectionTitle>СДЕЛАНО СЕГОДНЯ · {done.length}</SectionTitle>
           {done.map((o) => <OccurrenceCard key={o.id} o={o} now={d.now} />)}
+        </>}
+
+        {d.drafts.length > 0 && <>
+          <SectionTitle>📝 ЧЕРНОВИКИ · {d.drafts.length}</SectionTitle>
+          <Body size={12} color={colors.dim} style={{ marginBottom: 10 }}>
+            Видишь только ты. Нажми — поправь — «В дела». ✕ — это не дело.
+          </Body>
+          {d.drafts.map((t) => <DraftCard key={t.id} t={t} onChange={d.reload} />)}
         </>}
 
         <Button title="+ НОВОЕ ДЕЛО" onPress={() => router.push('/new-task')} style={{ marginTop: 24 }} />

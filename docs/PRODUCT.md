@@ -311,20 +311,20 @@ Telegram-бот — возможно позже, отдельным клиент
 | Вход | **Supabase Auth**: Sign in with Apple, Google, email | Apple требует «Войти через Apple», если есть другие соцсети; не пишем свою авторизацию |
 | Данные | **Supabase Postgres + RLS** | приложение читает напрямую, доступ только к своей семье |
 | Звёзды и действия | **функции в базе (RPC)** | начисления нельзя подделать с телефона |
-| Пинки и push | Node-сервер (из этого репо) + **Expo Push** | планировщик раз в минуту |
+| Сервер | **Supabase Edge Functions** + **pg_cron** | голосовая диагностика, планировщик пинков раз в минуту, push через Expo Push; отдельный хостинг не нужен |
 | Подписки | **RevenueCat** | App Store + Google Play одной библиотекой |
 
 Структура репозитория:
 
 ```
 /app        — Expo-приложение
-/server     — Node: планировщик пинков, push
-/supabase   — миграции базы
+/supabase/functions — серверный код (Edge Functions)
+/supabase/migrations — миграции базы
 /docs       — этот документ
 ```
 
 База — **существующий проект Supabase**, таблицы старого бота удаляются скриптом `supabase/reset_and_install.sql`.
-Код старого бота (`handlers/`, `index.js`) после этого не работает; сервер пинков пишется заново в `/server`.
+Код старого бота (`handlers/`, `index.js`) после этого не работает; серверная часть — Edge Functions в `supabase/functions`.
 
 ---
 

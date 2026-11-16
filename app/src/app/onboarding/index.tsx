@@ -36,6 +36,13 @@ export default function Start() {
     setBusy(null)
     if (error) return Alert.alert('Не нашли', 'Проверь код приглашения')
     await reload()
+    // По общему коду: если в доме есть «заготовки», спросим «Кто ты?», чтобы не появился двойник
+    if (c.length <= 12) {
+      const { data: hm } = await supabase.from('household_members').select('household_id').eq('user_id', me!.id).maybeSingle()
+      const { count } = await supabase.from('household_members').select('profiles!inner(is_placeholder)', { count: 'exact', head: true })
+        .eq('household_id', hm?.household_id ?? '').eq('profiles.is_placeholder', true)
+      if (count) return router.replace('/onboarding/whoami')
+    }
     router.replace('/onboarding/welcome')
   }
 
