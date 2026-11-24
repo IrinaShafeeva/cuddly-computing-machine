@@ -1,7 +1,8 @@
 // Supabase Edge Function: дело голосом
 // «Саше завтра к семи вынести мусор и протереть ведро» → заполненная форма дела
-// POST JSON: { household_id, audio_path? (Storage voice/<user>/…), text?, now: '2026-11-16 14:05, понедельник' }
-// → { transcript, title, notes, icon, assignee, repeat, days, n, month_day, day_offset, due_time }
+// POST JSON: { household_id, audio_path? (Storage voice/<user>/…), text?, now: '2026-11-16 14:05, понедельник', mode?: 'task' | 'guide' }
+// task  → { transcript, title, notes, icon, assignee, repeat, days, n, month_day, day_offset, due_time, guide_id }
+// guide → { transcript, title, icon, place, steps: string[] }
 // Секрет: OPENAI_API_KEY (тот же, что для диагностики).
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
@@ -30,9 +31,22 @@ const SYSTEM = `Ты помогаешь семейному приложению 
 - month_day: для monthly — число месяца.
 - day_offset: для once — через сколько дней от сегодня (сегодня = 0, завтра = 1, «в пятницу» — посчитай от текущей даты). Если не сказано — 0.
 - due_time: "ЧЧ:ММ" к какому времени, если сказано («к семи вечера» = "19:00", «утром» = "09:00", «днём» = "13:00», «вечером» = "21:00»). null если не сказано.
+- guide: номер гида из списка гидов семьи, если дело явно про него («по гиду», «как в гиде», или дело про ту же вещь — «поменять губку» и гид «Губка для посуды»). null, если не подходит ни один.
 
 Ответ — только JSON:
-{"title":"","notes":"","icon":"","who":null,"repeat":"once","days":[],"n":2,"month_day":1,"day_offset":0,"due_time":null}`
+{"title":"","notes":"","icon":"","who":null,"repeat":"once","days":[],"n":2,"month_day":1,"day_offset":0,"due_time":null,"guide":null}`
+
+const GUIDE_SYSTEM = `Ты помогаешь семейному приложению «Пинок» записать ГИД — короткую домашнюю инструкцию: где что лежит и как это делать.
+Человек надиктовал голосом. Разложи по полям.
+
+Поля:
+- title: что это, 2–5 слов, с заглавной буквы («Губка для посуды», «Как включить посудомойку»).
+- icon: одна эмодзи по смыслу.
+- place: где лежит / где находится, коротко («под раковиной, слева»). Пусто, если не сказано.
+- steps: шаги по порядку, каждый — одно короткое понятное действие своими словами. Без нумерации. Если шагов нет — [].
+
+Ответ — только JSON:
+{"title":"","icon":"","place":"","steps":[]}`
 
 async function stt(file: File): Promise<string> {
   const fd = new FormData()
@@ -75,26 +89,41 @@ Deno.serve(async (req) => {
     }
     if (!transcript) return json({ error: 'Ничего не услышала — скажи ещё раз' }, 400)
 
+    const ask = async (system: string, user: string) => {
+      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: TEXT_MODEL, temperature: 0.1, response_format: { type: 'json_object' },
+          messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        }),
+      })
+      if (!r.ok) throw new Error(`chat ${r.status}: ${await r.text()}`)
+      return JSON.parse((await r.json()).choices[0].message.content || '{}')
+    }
+
+    // ── Гид голосом ──
+    if (body.mode === 'guide') {
+      const g = await ask(GUIDE_SYSTEM, `Сообщение:\n"""${transcript}"""`)
+      return json({
+        transcript,
+        title: String(g.title || transcript).slice(0, 80),
+        icon: g.icon || null,
+        place: String(g.place || '').slice(0, 200),
+        steps: (Array.isArray(g.steps) ? g.steps : []).map((x: unknown) => String(x).trim()).filter(Boolean).slice(0, 15),
+      })
+    }
+
+    const { data: guideRows } = await supabase.from('guides').select('id, title').eq('household_id', householdId).order('title')
+    const guides = guideRows ?? []
+
     const me = members.find((m) => m.id === userId)
     const others = members.filter((m) => m.id !== userId)
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: TEXT_MODEL,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM },
-          { role: 'user', content:
-            `Сейчас: ${String(body.now ?? new Date().toISOString())}\nГоворит: ${me?.name ?? 'я'}\n` +
-            `Семья: ${others.map((m) => `${m.name} (${m.role === 'child' ? 'ребёнок' : 'взрослый'})`).join(', ') || 'никого'}\n\n` +
-            `Сообщение:\n"""${transcript}"""` },
-        ],
-      }),
-    })
-    if (!r.ok) throw new Error(`chat ${r.status}: ${await r.text()}`)
-    const p = JSON.parse((await r.json()).choices[0].message.content || '{}')
+    const p = await ask(SYSTEM,
+      `Сейчас: ${String(body.now ?? new Date().toISOString())}\nГоворит: ${me?.name ?? 'я'}\n` +
+      `Семья: ${others.map((m) => `${m.name} (${m.role === 'child' ? 'ребёнок' : 'взрослый'})`).join(', ') || 'никого'}\n` +
+      `Гиды: ${guides.map((g, i) => `${i + 1}. ${g.title}`).join('; ') || 'нет'}\n\n` +
+      `Сообщение:\n"""${transcript}"""`)
 
     const byName = (name: string | null) => {
       if (!name) return null
@@ -116,6 +145,7 @@ Deno.serve(async (req) => {
       month_day: Math.max(1, Math.min(Number(p.month_day) || 1, 31)),
       day_offset: Math.max(0, Math.min(Number(p.day_offset) || 0, 365)),
       due_time: time,
+      guide_id: Number.isInteger(Number(p.guide)) ? guides[Number(p.guide) - 1]?.id ?? null : null,
     })
   } catch (e) {
     console.error('task-parse', e)

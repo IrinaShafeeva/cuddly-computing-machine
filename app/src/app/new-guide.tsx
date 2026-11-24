@@ -8,13 +8,14 @@ import { askPhoto } from '@/lib/photos'
 import { colors } from '@/lib/theme'
 import type { Guide } from '@/lib/types'
 import { Photo } from '@/components/Photo'
+import { VoiceGuideButton, type VoiceGuide } from '@/components/VoiceTask'
 import { Body, Button, Input, SectionTitle } from '@/components/ui'
 
 const ICONS = ['🧽', '🧺', '🍽', '🗑', '🧴', '🧹', '🔧', '🪴', '🐕', '👶', '🔌', '📦']
 
 // Новый гид или правка текста: /new-guide?id=<guide>
 export default function NewGuide() {
-  const { id } = useLocalSearchParams<{ id?: string }>()
+  const { id, back } = useLocalSearchParams<{ id?: string; back?: string }>()
   const { household } = useSession()
   const navigation = useNavigation()
   const [title, setTitle] = useState('')
@@ -24,6 +25,14 @@ export default function NewGuide() {
   const [item, setItem] = useState<string | null>(null)
   const [placePhoto, setPlacePhoto] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [heard, setHeard] = useState<string | null>(null)
+  const fromVoice = (v: VoiceGuide) => {
+    setHeard(v.transcript)
+    setTitle(v.title)
+    if (v.icon) setIcon(v.icon)
+    if (v.place) setPlace(v.place)
+    if (v.steps?.length) setSteps(v.steps)
+  }
 
   useEffect(() => {
     navigation.setOptions({ title: id ? 'Гид' : 'Новый гид' })
@@ -45,11 +54,14 @@ export default function NewGuide() {
     })
     if (error) { setBusy(false); return Alert.alert('Ошибка', error.message) }
     const gid = (data as Guide).id
-    if (item) await supabase.rpc('add_guide_photo', { p_guide: gid, p_kind: 'item', p_path: item })
-    if (placePhoto) await supabase.rpc('add_guide_photo', { p_guide: gid, p_kind: 'place', p_path: placePhoto })
+    for (const [kind, path] of [['item', item], ['place', placePhoto]] as const) {
+      if (!path) continue
+      const { error: pe } = await supabase.rpc('add_guide_photo', { p_guide: gid, p_kind: kind, p_path: path })
+      if (pe) Alert.alert('Фото не сохранилось', pe.message)
+    }
     setBusy(false)
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-    if (id) router.back()
+    if (id || back) router.back()   // из формы дела — назад к делу, гид уже в списке
     else router.replace({ pathname: '/guide/[id]', params: { id: gid } })
   }
 
@@ -73,10 +85,16 @@ export default function NewGuide() {
   return (
     <ScrollView style={{ backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
       keyboardShouldPersistTaps="handled">
+      {!id && <View style={{ marginBottom: 4 }}>
+        <VoiceGuideButton onParsed={fromVoice} />
+        {heard && <Body size={12} color={colors.dim} style={{ marginTop: 8 }}>
+          Услышала: «{heard}». Проверь ниже, сфоткай место и вещь — и «СОЗДАТЬ ГИД».
+        </Body>}
+      </View>}
       <SectionTitle>ЧТО</SectionTitle>
-      <Input value={title} onChangeText={setTitle} placeholder="Губка для стола" autoFocus={!id} />
+      <Input value={title} onChangeText={setTitle} placeholder="Губка для стола" />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-        {ICONS.map((e) => (
+        {(icon && !ICONS.includes(icon) ? [icon, ...ICONS] : ICONS).map((e) => (
           <Pressable key={e} onPress={() => setIcon(icon === e ? null : e)}
             style={{ padding: 6, borderWidth: 1, borderColor: icon === e ? colors.green : 'transparent' }}>
             <Body size={22}>{e}</Body>

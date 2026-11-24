@@ -13,12 +13,23 @@ export type VoiceTask = {
   transcript: string; title: string; notes: string; icon: string | null; assignee: string | null
   repeat: 'once' | 'daily' | 'weekly' | 'every_n_days' | 'monthly'
   days: number[]; n: number; month_day: number; day_offset: number; due_time: string | null
+  guide_id?: string | null
 }
+export type VoiceGuide = { transcript: string; title: string; icon: string | null; place: string; steps: string[] }
 
 const WD = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота']
 
 // Большая кнопка: нажала — говоришь — нажала ещё раз → форма дела заполнилась сама
 export function VoiceTaskButton({ onParsed }: { onParsed: (t: VoiceTask) => void }) {
+  return <VoiceButton mode="task" hint="«Саше завтра к семи вынести мусор и помыть ведро»" onParsed={onParsed} />
+}
+
+// То же для гида: «Губка лежит под раковиной, меняем раз в неделю…» → название, где лежит, шаги
+export function VoiceGuideButton({ onParsed }: { onParsed: (g: VoiceGuide) => void }) {
+  return <VoiceButton mode="guide" hint="«Губка лежит под раковиной слева. Меняем раз в неделю, старую — в мусор»" onParsed={onParsed} />
+}
+
+function VoiceButton<T>({ mode, hint, onParsed }: { mode: 'task' | 'guide'; hint: string; onParsed: (t: T) => void }) {
   const { session, household } = useSession()
   const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, numberOfChannels: 1, bitRate: 64000, directory: 'document' })
   const state = useAudioRecorderState(recorder)
@@ -55,7 +66,7 @@ export function VoiceTaskButton({ onParsed }: { onParsed: (t: VoiceTask) => void
       const audio_path = await uploadRecording(file, session!.user.id)
       const d = new Date()
       const now = `${d.toLocaleDateString('sv')} ${d.toTimeString().slice(0, 5)}, ${WD[d.getDay()]}`
-      const r = await api<VoiceTask>('task-parse', { household_id: household!.id, audio_path, now })
+      const r = await api<T>('task-parse', { household_id: household!.id, audio_path, now, mode })
       forgetRecording(file)
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
       onParsed(r)
@@ -79,7 +90,7 @@ export function VoiceTaskButton({ onParsed }: { onParsed: (t: VoiceTask) => void
             {busy ? 'РАЗБИРАЮ…' : rec ? `ГОВОРИ… ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : 'СКАЖИ ГОЛОСОМ'}
           </Pixel>
           <Body size={12} color={colors.dim} style={{ marginTop: 4 }}>
-            {rec ? 'Нажми ещё раз, когда закончишь' : '«Саше завтра к семи вынести мусор и помыть ведро»'}
+            {rec ? 'Нажми ещё раз, когда закончишь' : hint}
           </Body>
         </View>
       </Pressable>

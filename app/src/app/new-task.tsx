@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Alert, Pressable, ScrollView, Switch, View } from 'react-native'
-import { router, useLocalSearchParams, useNavigation } from 'expo-router'
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router'
 import * as Haptics from 'expo-haptics'
 import { supabase } from '@/lib/supabase'
 import { useSession } from '@/lib/session'
@@ -47,11 +47,12 @@ export default function NewTask() {
   const [review, setReview] = useState(true)   // кто дал дело — тот и проверяет
   const [guideId, setGuideId] = useState<string | null>(null)
   const [guides, setGuides] = useState<Guide[]>([])
-  useEffect(() => {
+  // при возврате с «+ Новый гид» — список обновится
+  useFocusEffect(useCallback(() => {
     if (!household) return
     supabase.from('guides').select('*').eq('household_id', household.id).order('title')
       .then(({ data }) => setGuides((data ?? []) as Guide[]))
-  }, [household])
+  }, [household]))
 
   useEffect(() => {
     navigation.setOptions({ title: editing ? 'Дело' : 'Новое дело' })
@@ -97,6 +98,7 @@ export default function NewTask() {
     if (v.repeat === 'monthly') setMonthDay(String(v.month_day))
     if (v.repeat === 'once') setDayOffset(v.day_offset)
     if (v.due_time) setDueTime(v.due_time)
+    if (v.guide_id) setGuideId(v.guide_id)
   }
 
   const toggleDay = (i: number) => setDays(days.includes(i) ? days.filter((d) => d !== i) : [...days, i])
@@ -163,7 +165,7 @@ export default function NewTask() {
       <Input value={notes} onChangeText={setNotes} placeholder="Описание: как, где, что важно (необязательно)" multiline
         style={{ minHeight: 60, textAlignVertical: 'top' }} />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-        {ICONS.map((e) => (
+        {(icon && !ICONS.includes(icon) ? [icon, ...ICONS] : ICONS).map((e) => (
           <Pressable key={e} onPress={() => setIcon(icon === e ? null : e)}
             style={{ padding: 6, borderWidth: 1, borderColor: icon === e ? colors.green : 'transparent' }}>
             <Body size={22}>{e}</Body>
@@ -182,6 +184,18 @@ export default function NewTask() {
           }} />
       )}
       <Body size={12} color={colors.dim} style={{ marginTop: 6 }}>До 5 фото: например, кухня с разных сторон.</Body>
+
+      <SectionTitle>📘 ГИД: КАК ДЕЛАТЬ</SectionTitle>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        <Chip label="Без гида" active={!guideId} onPress={() => setGuideId(null)} />
+        {guides.map((g) => (
+          <Chip key={g.id} label={`${g.icon ?? '📘'} ${g.title}`} active={guideId === g.id} onPress={() => setGuideId(g.id)} />
+        ))}
+        <Chip label="+ Новый гид" onPress={() => router.push({ pathname: '/new-guide', params: { back: '1' } })} />
+      </View>
+      <Body size={12} color={colors.dim}>
+        {guides.length ? 'На деле появится кнопка «📘 Как делать»: где лежит, фото и шаги.' : 'Гид — инструкция: где лежит, как выглядит и как делать. Сделай первый — и прицепи.'}
+      </Body>
 
       <SectionTitle>КТО</SectionTitle>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
@@ -265,16 +279,6 @@ export default function NewTask() {
         </View>
       )}
 
-      {guides.length > 0 && <>
-        <SectionTitle>ГИД К ДЕЛУ</SectionTitle>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-          <Chip label="Без гида" active={!guideId} onPress={() => setGuideId(null)} />
-          {guides.map((g) => (
-            <Chip key={g.id} label={`${g.icon ?? '📘'} ${g.title}`} active={guideId === g.id} onPress={() => setGuideId(g.id)} />
-          ))}
-        </View>
-        <Body size={12} color={colors.dim}>Сделал дело — приложение предложит обновить фото в гиде.</Body>
-      </>}
 
       <Button title={isDraft ? 'В ДЕЛА 🥊' : editing ? 'СОХРАНИТЬ' : 'ДАТЬ ПИНОК 🥊'} onPress={() => save(true)}
         loading={busy} style={{ marginTop: 28 }} />

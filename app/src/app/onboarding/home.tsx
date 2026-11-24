@@ -33,8 +33,11 @@ export default function HomeStuff() {
 
   const next = async () => {
     setBusy(true)
+    // прибор такого вида уже есть (вернулась на шаг назад) — второй не создаём
+    const { data: have } = await supabase.from('appliances').select('kind').eq('household_id', household!.id)
+    const kinds = new Set((have ?? []).map((x) => x.kind))
     for (const t of THINGS) {
-      if (t.appliance && picked.includes(t.key)) {
+      if (t.appliance && picked.includes(t.key) && !kinds.has(t.key)) {
         const { error } = await supabase.rpc('create_appliance',
           { p_household: household!.id, p_name: t.appliance, p_kind: t.key, p_icon: t.icon })
         if (error) { setBusy(false); return Alert.alert('Ошибка', error.message) }

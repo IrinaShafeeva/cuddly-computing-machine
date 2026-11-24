@@ -13,9 +13,12 @@ export type HouseData = {
   activity: Activity[]
   drafts: Task[]             // мои черновики дел (после голосового разбора)
   reviews: Occurrence[]      // «сделано» — ждут моей проверки
+  goal: WeekGoal | null      // цель недели семьи (ставит взрослый)
+  settings: Record<string, any>
 }
+export type WeekGoal = { stars: number; prize: string }
 
-const empty: HouseData = { occurrences: [], flags: [], appliances: [], stars: {}, weekStars: {}, activity: [], drafts: [], reviews: [] }
+const empty: HouseData = { occurrences: [], flags: [], appliances: [], stars: {}, weekStars: {}, activity: [], drafts: [], reviews: [], goal: null, settings: {} }
 
 // Все данные дома + realtime-обновления + «тик» раз в 30 с, чтобы огонь разгорался сам
 export function useHouseData() {
@@ -33,7 +36,7 @@ export function useHouseData() {
     await supabase.rpc('ensure_today', { p_household: hh })
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0)
     const weekAgo = new Date(Date.now() - 7 * 86400_000)
-    const [open, doneToday, flags, appliances, ledger, activity, drafts, reviews] = await Promise.all([
+    const [open, doneToday, flags, appliances, ledger, activity, drafts, reviews, hh2] = await Promise.all([
       supabase.from('task_occurrences').select('*, task:tasks(*)').eq('household_id', hh)
         .in('status', ['open', 'missed']).order('due_at'),
       supabase.from('task_occurrences').select('*, task:tasks(*)').eq('household_id', hh)
@@ -48,7 +51,11 @@ export function useHouseData() {
         .order('created_at'),
       supabase.from('task_occurrences').select('*, task:tasks!inner(*)').eq('household_id', hh)
         .eq('status', 'done').eq('review', 'pending').eq('task.created_by', me ?? '').order('done_at'),
+      supabase.from('households').select('settings').eq('id', hh).maybeSingle(),
     ])
+    const settings = (hh2.data?.settings ?? {}) as Record<string, any>
+    const g = settings.weekly_goal
+    const goal = g && Number(g.stars) > 0 ? { stars: Number(g.stars), prize: String(g.prize ?? '') } : null
     const stars: Record<string, number> = {}
     const weekStars: Record<string, number> = {}
     for (const r of ledger.data ?? []) {
@@ -63,6 +70,7 @@ export function useHouseData() {
       activity: (activity.data ?? []) as Activity[],
       drafts: (drafts.data ?? []) as Task[],
       reviews: ((reviews.data ?? []) as Occurrence[]).filter((o) => o.done_by !== me),
+      goal, settings,
     })
     setLoading(false)
   }, [household, me])

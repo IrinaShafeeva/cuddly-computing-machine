@@ -78,7 +78,7 @@ export function OccurrenceCard({ o, now }: { o: Occurrence; now: number }) {
         { text: 'Не сейчас', style: 'cancel' },
         { text: 'Сфоткать', onPress: async () => {
           const path = await askPhoto(household!.id, 'guide', 'Новое фото для гида')
-          if (path) await supabase.rpc('add_guide_photo', { p_guide: gid, p_kind: 'item', p_path: path })
+          if (path) fail((await supabase.rpc('add_guide_photo', { p_guide: gid, p_kind: 'item', p_path: path })).error)
         } },
       ])
     }
@@ -122,6 +122,12 @@ export function OccurrenceCard({ o, now }: { o: Occurrence; now: number }) {
           ) : null}
           {o.task.notes && !done ? (
             <Body size={12} color={colors.dim} numberOfLines={2} style={{ marginTop: 3 }}>{o.task.notes}</Body>
+          ) : null}
+          {o.task.guide_id && !done ? (
+            <Pressable hitSlop={6} onPress={() => router.push({ pathname: '/guide/[id]', params: { id: o.task.guide_id! } })}
+              style={{ alignSelf: 'flex-start', marginTop: 6, borderWidth: 1, borderColor: colors.green, paddingHorizontal: 8, paddingVertical: 4 }}>
+              <Body size={12} weight="medium" color={colors.green}>📘 Как делать</Body>
+            </Pressable>
           ) : null}
         </Pressable>
         <PhotoCover paths={done && proofPhotos(o).length ? proofPhotos(o) : taskPhotos(o.task)} style={{ width: 44, height: 44 }} />
@@ -236,14 +242,16 @@ export function FlagCard({ f, now }: { f: Flag; now: number }) {
 }
 
 // ── Прибор ──
-export function ApplianceCard({ a, now }: { a: Appliance; now: number }) {
-  const { member } = useSession()
+// Плитка прибора: маленькая, по 3 в ряд. Нажала — выбрать, что сейчас; там же «убрать прибор»
+export function ApplianceTile({ a, now, onChanged }: { a: Appliance; now: number; onChanged?: () => void }) {
+  const { member, members, session } = useSession()
   const pop = usePop()
   const heat = applianceHeat(a, now)
   const idx = a.states.findIndex((st) => st.key === a.state)
   const cur = a.states[idx]
   const next = a.states[(idx + 1) % a.states.length]
   const who = member(a.state_changed_by)
+  const adult = members.find((m) => m.id === session?.user.id)?.role === 'adult'
 
   const advance = async (to: string | null = null) => {
     const { data, error } = await supabase.rpc('set_appliance_state', { p_appliance: a.id, p_state: to })
@@ -251,34 +259,33 @@ export function ApplianceCard({ a, now }: { a: Appliance; now: number }) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     if (data) pop.show(`+${data} ⭐`)
   }
+  const remove = () => Alert.alert(`Убрать «${a.name}»?`, 'Плитка пропадёт с главного экрана у всей семьи.', [
+    { text: 'Отмена', style: 'cancel' },
+    { text: 'Убрать', style: 'destructive', onPress: async () => {
+      if (!fail((await supabase.from('appliances').delete().eq('id', a.id)).error)) onChanged?.()
+    } },
+  ])
+  const menu = () => Alert.alert(`${a.icon ?? '🧺'} ${a.name}: ${cur?.label ?? ''}`,
+    who ? `Переключил(а): ${who.display_name} · ${ago(a.state_changed_at, now)}` : ago(a.state_changed_at, now), [
+      { text: `→ ${next.label}`, onPress: () => advance() },
+      ...a.states.filter((st) => st.key !== a.state && st.key !== next.key).map((st) => ({ text: st.label, onPress: () => advance(st.key) })),
+      ...(adult ? [{ text: '🗑 Убрать прибор', style: 'destructive' as const, onPress: remove }] : []),
+      { text: 'Отмена', style: 'cancel' as const },
+    ])
 
+  const c = heat === 'green' ? colors.green : heatColor[heat]
   return (
-    <HeatCard heat={heat}>
-      <View style={s.row}>
-        <Body size={26}>{a.icon ?? '🧺'}</Body>
-        {/* Нажал на статус — можно поправить, если переключили случайно */}
-        <Pressable style={{ flex: 1 }} onPress={() => Alert.alert(`${a.name}: что сейчас?`, who ? `Последним переключил(а): ${who.display_name} · ${ago(a.state_changed_at, now)}` : undefined,
-          [...a.states.filter((st) => st.key !== a.state).map((st) => ({ text: st.label, onPress: () => advance(st.key) })),
-            { text: 'Отмена', style: 'cancel' as const }])}>
-          <Body weight="medium">{a.name}</Body>
-          <Body size={13} color={heat === 'green' ? colors.green : heatColor[heat]} weight="bold" style={{ marginTop: 2 }}>
-            {cur?.label}
-          </Body>
-          <Body size={11} color={colors.dim} style={{ marginTop: 2 }}>
-            {ago(a.state_changed_at, now)}{who ? ` · ${who.display_name}` : ''}
-          </Body>
-        </Pressable>
-        <Button small variant="ghost" title={`→ ${next.label}`} onPress={() => advance()} />
-      </View>
-      <View style={s.steps}>
+    <Pressable onPress={menu} style={[s.tile, { borderColor: heat === 'green' ? colors.border : c }]}>
+      <Body size={24}>{a.icon ?? '🧺'}</Body>
+      <Body size={11} color={colors.dim} numberOfLines={1} style={{ marginTop: 4 }}>{a.name}</Body>
+      <Body size={12} weight="bold" color={c} numberOfLines={2} style={{ marginTop: 2, textAlign: 'center' }}>{cur?.label}</Body>
+      <View style={[s.steps, { marginTop: 6, alignSelf: 'stretch' }]}>
         {a.states.map((st, i) => (
-          <View key={st.key} style={[s.step, {
-            backgroundColor: i === idx ? heatColor[heat] : i < idx ? colors.greenDark : colors.card2,
-          }]} />
+          <View key={st.key} style={[s.step, { height: 3, backgroundColor: i === idx ? c : i < idx ? colors.greenDark : colors.card2 }]} />
         ))}
       </View>
       {pop.node}
-    </HeatCard>
+    </Pressable>
   )
 }
 
@@ -291,6 +298,7 @@ const s = StyleSheet.create({
   steps: { flexDirection: 'row', gap: 3, marginTop: 10 },
   step: { flex: 1, height: 5 },
   pop: { position: 'absolute', right: 12, top: -6 },
+  tile: { width: '31.5%', alignItems: 'center', padding: 8, borderWidth: 2, backgroundColor: colors.card, minHeight: 104 },
 })
 
 // ── Черновик дела: серый, без огня и пинков. Нажми — откроется дело, там «В дела» ──

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { Alert, Animated, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, View } from 'react-native'
+import { Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect } from 'expo-router'
 import * as Haptics from 'expo-haptics'
@@ -68,14 +68,16 @@ export default function Stock() {
     { text: 'Отмена', style: 'cancel' },
     { text: 'Убрать', style: 'destructive', onPress: async () => {
       setPicked(null)
-      await supabase.rpc('delete_stock_item', { p_item: it.id })
+      const { error } = await supabase.rpc('delete_stock_item', { p_item: it.id })
+      if (error) Alert.alert('Не получилось', error.message)
       load()
     } },
   ])
 
   const fillZone = async () => {
     const pack = PACKS[zone].map((p) => ({ ...p, zone }))
-    await supabase.rpc('add_stock_items', { p_household: household!.id, p_items: pack })
+    const { error } = await supabase.rpc('add_stock_items', { p_household: household!.id, p_items: pack })
+    if (error) return Alert.alert('Не получилось', error.message)
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
     load()
   }
@@ -87,7 +89,8 @@ export default function Stock() {
   // Полки по 4 продукта
   const shelves: StockItem[][] = []
   for (let k = 0; k < inZone.length; k += 4) shelves.push(inZone.slice(k, k + 4))
-  if (!shelves.length) shelves.push([])
+  // последняя полка заполнена — новая пустая полка под «+», иначе добавить некуда
+  if (!shelves.length || shelves[shelves.length - 1].length === 4) shelves.push([])
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
@@ -281,14 +284,20 @@ function AddItem({ visible, zone, onClose }: { visible: boolean; zone: Zone; onC
   const { household } = useSession()
   const [name, setName] = useState('')
   const [icon, setIcon] = useState('📦')
+  const [busy, setBusy] = useState(false)
   const save = async () => {
-    if (!name.trim()) return
-    await supabase.rpc('add_stock_items', { p_household: household!.id, p_items: [{ name: name.trim(), icon, zone }] })
+    if (!name.trim() || busy) return
+    setBusy(true)
+    const { data, error } = await supabase.rpc('add_stock_items', { p_household: household!.id, p_items: [{ name: name.trim(), icon, zone }] })
+    setBusy(false)
+    if (error) return Alert.alert('Не получилось', error.message)
+    if (data === 0) return Alert.alert('Уже есть', `«${name.trim()}» уже стоит на полке.`)
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
     setName(''); setIcon('📦'); onClose()
   }
   return (
     <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Pressable style={s.backdrop} onPress={onClose}>
         <Pressable style={s.sheet} onPress={() => {}}>
           <Pixel size={11} color={colors.green} style={{ marginBottom: 14 }}>НОВЫЙ ПРОДУКТ</Pixel>
@@ -300,9 +309,10 @@ function AddItem({ visible, zone, onClose }: { visible: boolean; zone: Zone; onC
               </Pressable>
             ))}
           </View>
-          <Button title="НА ПОЛКУ" onPress={save} disabled={!name.trim()} />
+          <Button title="НА ПОЛКУ" onPress={save} disabled={!name.trim()} loading={busy} />
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   )
 }

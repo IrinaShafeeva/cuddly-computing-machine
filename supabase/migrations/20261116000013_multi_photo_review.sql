@@ -130,3 +130,6 @@ begin
                   jsonb_build_object('type', 'review', 'occurrence_id', o.id), true);
   end if;
 end $$;
+
+-- обновить список функций для приложения сразу
+notify pgrst, 'reload schema';
